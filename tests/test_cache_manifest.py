@@ -37,6 +37,7 @@ from PIL import Image
 from retina_screen.embeddings import (
     MANIFEST_FIELDNAMES,
     BackboneConfig,
+    BackboneUnavailableError,
     CacheCorruptError,
     CacheMissError,
     MockBackbone,
@@ -90,6 +91,15 @@ def _make_backbone_config(embedding_dim: int = 1024) -> BackboneConfig:
 
 def _make_prep_config(image_size: int = 224) -> PreprocessingConfig:
     return PreprocessingConfig(image_size=image_size)
+
+
+def _load_extract_embeddings_script_module():
+    script_path = Path("scripts") / "03_extract_embeddings.py"
+    spec = importlib.util.spec_from_file_location("extract_embeddings_script_test", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 # ---------------------------------------------------------------------------
@@ -668,13 +678,16 @@ def test_load_backbone_mock_returns_mock_backbone() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 22. load_backbone("dinov2") → NotImplementedError
+# 22. load_backbone with unknown model_type → BackboneUnavailableError (no silent mock)
 # ---------------------------------------------------------------------------
 
 
-def test_load_backbone_real_raises_not_implemented() -> None:
-    cfg = BackboneConfig(name="dinov2_large", embedding_dim=1024, model_type="dinov2")
-    with pytest.raises(NotImplementedError, match="Stage 7"):
+def test_load_backbone_unknown_type_raises_clearly() -> None:
+    """Unknown model_type must raise BackboneUnavailableError, not silently use MockBackbone."""
+    cfg = BackboneConfig(
+        name="hypothetical_backbone", embedding_dim=512, model_type="totally_unknown"
+    )
+    with pytest.raises(BackboneUnavailableError):
         load_backbone(cfg, torch.device("cpu"))
 
 
@@ -771,11 +784,7 @@ def test_manifest_no_error_checksum_entries(
 def test_script_03_fails_when_cache_verification_reports_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    script_path = Path("scripts") / "03_extract_embeddings.py"
-    spec = importlib.util.spec_from_file_location("extract_embeddings_script_test", script_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_extract_embeddings_script_module()
 
     def fake_load_config(path: Path | str) -> dict:
         text = str(path).replace("\\", "/")
@@ -818,3 +827,49 @@ def test_script_03_fails_when_cache_verification_reports_failures(
 
     with pytest.raises(RuntimeError, match="Cache integrity verification failed"):
         module.main()
+
+
+def test_script_03_stage8a_without_limit_fails_before_loading_backbone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_extract_embeddings_script_module()
+
+    monkeypatch.setattr(
+        module,
+        "load_config",
+        lambda path: {"run_mode": "stage8a_odir_verification", "seed": 42},
+    )
+    monkeypatch.setattr(module, "setup_logging", lambda: None)
+
+    def fail_if_backbone_loading_starts(cfg: dict) -> None:
+        pytest.fail("Stage 8A guard should run before backbone config/model loading")
+
+    monkeypatch.setattr(module, "_build_backbone_config", fail_if_backbone_loading_starts)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_extract_embeddings.py",
+            "--config",
+            "configs/experiment/stage8a_odir_resnet50.yaml",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="Stage 8A verification configs require --limit"):
+        module.main()
+
+
+def test_script_03_stage8a_with_limit_passes_guard() -> None:
+    module = _load_extract_embeddings_script_module()
+
+    module._enforce_stage8a_limit({"stage": "8A"}, 32)
+    module._enforce_stage8a_limit(
+        {"stage_note": "Stage 8A verification only. Not a scientific baseline."},
+        32,
+    )
+
+
+def test_script_03_non_stage8a_without_limit_is_unchanged() -> None:
+    module = _load_extract_embeddings_script_module()
+
+    module._enforce_stage8a_limit({"run_mode": "smoke_dummy", "stage": "5"}, None)

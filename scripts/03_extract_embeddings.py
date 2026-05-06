@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 # Default proportional allocation across splits when using --limit.
 _SPLIT_ALLOC = {"train": 0.625, "val": 0.1875, "test": 0.1875}
 
+_STAGE8A_LIMIT_ERROR = (
+    "Stage 8A verification configs require --limit to avoid accidental full "
+    "extraction. Use --limit 32."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -84,15 +89,16 @@ def _build_adapter(cfg: dict[str, Any]):
     return _make_dummy_adapter(cfg)
 
 
-def _build_backbone_config(cfg: dict) -> BackboneConfig:
+def _build_backbone_config(cfg: dict) -> tuple[BackboneConfig, dict]:
     backbone_name = cfg.get("backbone", "mock")
     backbone_raw = load_config(Path(f"configs/backbone/{backbone_name}.yaml"))
-    return BackboneConfig(
+    config = BackboneConfig(
         name=backbone_raw["name"],
         embedding_dim=int(backbone_raw["embedding_dim"]),
         model_type=backbone_raw["model_type"],
         version=backbone_raw.get("version", ""),
     )
+    return config, backbone_raw
 
 
 def _build_prep_config(cfg: dict) -> PreprocessingConfig:
@@ -109,6 +115,24 @@ def _build_prep_config(cfg: dict) -> PreprocessingConfig:
         random_rotation_deg=float(prep_raw.get("random_rotation_deg", 0.0)),
         color_jitter=bool(prep_raw.get("color_jitter", False)),
     )
+
+
+def _is_stage8a_verification_config(cfg: dict[str, Any]) -> bool:
+    """Return True for Stage 8A verification configs that must stay limited."""
+    run_mode = str(cfg.get("run_mode", "")).strip().lower()
+    stage = str(cfg.get("stage", "")).strip().lower()
+    stage_note = str(cfg.get("stage_note", "")).lower()
+    return (
+        run_mode == "stage8a_odir_verification"
+        or stage == "8a"
+        or "stage 8a verification" in stage_note
+    )
+
+
+def _enforce_stage8a_limit(cfg: dict[str, Any], limit: int | None) -> None:
+    """Fail closed before any extraction for Stage 8A configs without --limit."""
+    if _is_stage8a_verification_config(cfg) and limit is None:
+        raise SystemExit(_STAGE8A_LIMIT_ERROR)
 
 
 def _latest_splits_csv(dataset: str) -> Path | None:
@@ -208,9 +232,10 @@ def main() -> None:
 
     setup_logging()
     cfg = load_config(args.config)
+    _enforce_stage8a_limit(cfg, args.limit)
     seed_everything(cfg.get("seed", 42))
 
-    backbone_config = _build_backbone_config(cfg)
+    backbone_config, backbone_raw = _build_backbone_config(cfg)
     prep_config = _build_prep_config(cfg)
     cache_root = Path(cfg.get("cache_root", "cache/embeddings"))
     dataset = cfg.get("dataset", "dummy")
@@ -258,6 +283,31 @@ def main() -> None:
                     recorded_root, current_root,
                 )
                 sys.exit(1)
+            # Check backbone identity where recorded. Checks "backbone" (old key) and
+            # "backbone_name" (new key) independently so old provenance files are handled.
+            _backbone_checks = [
+                ("backbone_name", backbone_config.name),
+                ("backbone", backbone_config.name),  # backward compat with old provenance
+                ("backbone_version", backbone_config.version),
+                ("backbone_source", backbone_raw.get("source", "")),
+                ("backbone_model_identifier", backbone_raw.get("model_identifier", backbone_config.version)),
+                ("embedding_dim", str(backbone_config.embedding_dim)),
+            ]
+            _backbone_mismatches: list[str] = []
+            for _key, _current_val in _backbone_checks:
+                _recorded_val = str(_prov.get(_key, "") or "")
+                if _recorded_val and _recorded_val != str(_current_val):
+                    _backbone_mismatches.append(
+                        f"{_key}: recorded={_recorded_val!r}, current={_current_val!r}"
+                    )
+            if _backbone_mismatches:
+                logger.error(
+                    "Cache provenance backbone mismatch: %s. "
+                    "Cached embeddings were extracted with a different backbone configuration. "
+                    "Rerun with --overwrite to force re-extraction.",
+                    _backbone_mismatches,
+                )
+                sys.exit(1)
 
     # Determine sample selection.
     if args.limit is not None:
@@ -303,9 +353,13 @@ def main() -> None:
 
     # Write/update cache provenance sidecar
     prov_data = {
-        "dataset_root_used": current_root,
-        "backbone": backbone_config.name,
+        "backbone_name": backbone_config.name,
+        "backbone_version": backbone_config.version,
+        "backbone_source": backbone_raw.get("source", ""),
+        "backbone_model_identifier": backbone_raw.get("model_identifier", backbone_config.version),
+        "embedding_dim": backbone_config.embedding_dim,
         "dataset_source": dataset,
+        "dataset_root_used": current_root,
         "preprocessing_hash": prep_hash,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

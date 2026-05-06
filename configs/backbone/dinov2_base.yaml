@@ -1,10 +1,10 @@
-name: dinov2_large
+name: dinov2_base
 model_type: dinov2
 source: torch_hub
 repo: facebookresearch/dinov2
-model_identifier: dinov2_vitl14
-version: dinov2_vitl14
-embedding_dim: 1024
+model_identifier: dinov2_vitb14
+version: dinov2_vitb14
+embedding_dim: 768
 input_size: 224
 frozen: true
 mean: [0.485, 0.456, 0.406]

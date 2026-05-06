@@ -14,7 +14,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib
+import json
 import logging
 import sys
 from pathlib import Path
@@ -27,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from retina_screen.core import get_device, load_config, seed_everything, setup_logging
 from retina_screen.embeddings import (
     BackboneConfig,
+    MockBackbone,
     get_cache_dir,
     load_backbone,
     load_embedding,
@@ -166,11 +169,57 @@ def main() -> None:
         f"Wrong embedding shape {embedding.shape}, expected ({backbone_config.embedding_dim},)."
     )
 
+    # Frozen parameter check.
+    all_frozen = all(not p.requires_grad for p in backbone.parameters())
+    n_params = sum(1 for _ in backbone.parameters())
+    logger.info("Frozen check: all_frozen=%s, n_params=%d", all_frozen, n_params)
+    assert all_frozen, (
+        f"Backbone {backbone_config.name!r} has trainable parameters. "
+        f"All backbone parameters must have requires_grad=False."
+    )
+
+    # Silent mock fallback guard.
+    mock_used = isinstance(backbone, MockBackbone)
+    if mock_used and backbone_config.model_type != "mock":
+        logger.error(
+            "CRITICAL: mock backbone was returned for model_type=%r. "
+            "Silent mock fallback is forbidden.",
+            backbone_config.model_type,
+        )
+        sys.exit(1)
+
+    # Write structured verification JSON.
+    run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+    verify_dir = Path("outputs") / "backbone_verification" / run_id
+    verify_dir.mkdir(parents=True, exist_ok=True)
+    verify_json_path = verify_dir / f"{backbone_config.name}_verification.json"
+    verification_result = {
+        "backbone_name": backbone_config.name,
+        "model_type": backbone_config.model_type,
+        "version": backbone_config.version,
+        "source": backbone_raw.get("source", "unknown"),
+        "model_identifier": backbone_raw.get("model_identifier", backbone_config.version),
+        "status": "pass",
+        "embedding_dim_expected": backbone_config.embedding_dim,
+        "embedding_dim_actual": int(embedding.shape[0]),
+        "frozen": all_frozen,
+        "n_params": n_params,
+        "device": str(device),
+        "preprocessing_hash": prep_hash,
+        "error": None,
+        "mock_used": mock_used,
+        "stage": "8A verification only",
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    with verify_json_path.open("w", encoding="utf-8") as _fh:
+        json.dump(verification_result, _fh, indent=2)
+    logger.info("Verification JSON written: %s", verify_json_path)
+
     logger.info(
-        "Verification PASSED: backbone=%s, image_size=%d, embedding_dim=%d, "
+        "VERIFICATION PASSED: backbone=%s, embedding_dim=%d, frozen=%s, mock_used=%s, "
         "cache_path=%s, checksum=%s...",
-        backbone_config.name, prep_config.image_size,
-        backbone_config.embedding_dim, cache_path, checksum[:12],
+        backbone_config.name, backbone_config.embedding_dim,
+        all_frozen, mock_used, cache_path, checksum[:12],
     )
 
 

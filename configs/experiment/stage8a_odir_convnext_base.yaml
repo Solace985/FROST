@@ -1,0 +1,20 @@
+run_mode: stage8a_odir_verification
+backbone: convnext_base
+preprocessing: default_224
+dataset_config: configs/dataset/odir.yaml
+task_config: configs/tasks/odir_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: odir
+dataset_root: data/ODIR-5K/ODIR-5K/ODIR-5K
+seed: 42
+embedding_dim: 1024
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+smoke_limit: 32
+fast_dev_run: true
+n_epochs: 3
+stage: 8A
+stage_note: "Stage 8A verification only. Not a scientific baseline."

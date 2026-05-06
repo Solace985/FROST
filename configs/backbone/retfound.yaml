@@ -1,0 +1,11 @@
+name: retfound
+model_type: retfound
+status: deferred
+reason: >
+  RETFound requires transformers, timm, and huggingface_hub dependencies plus
+  HF authentication and a verified embedding extraction method. None of these
+  prerequisites are available in the Stage 8A environment. Deferred until
+  dependencies are declared and access is confirmed.
+stage_available: deferred
+embedding_dim: 1024
+frozen: true

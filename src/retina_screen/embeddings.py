@@ -31,10 +31,11 @@ overwrite=False contract
 
 overwrite=True: always re-extract regardless of existing state.
 
-Deferred for later stages
---------------------------
-All non-mock model_type values (dinov2, retfound, convnext, resnet) raise
-NotImplementedError in Stage 6. Real backbone loading is implemented in Stage 7+.
+Real backbone support (Stage 8A)
+---------------------------------
+Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2'.
+RETFound is deferred (missing transformers/timm/huggingface_hub and HF auth).
+Unknown model_type raises BackboneUnavailableError — never falls back silently to mock.
 """
 
 from __future__ import annotations
@@ -88,6 +89,18 @@ class CacheCorruptError(ValueError):
     """Raised when an embedding file fails checksum or dimension validation."""
 
 
+class BackboneUnavailableError(RuntimeError):
+    """Raised when a real backbone cannot be loaded.
+
+    Causes include: missing dependencies, unavailable weights, network failure,
+    or unknown model_type. NEVER falls back to MockBackbone silently.
+    """
+
+
+class BackboneDimensionError(ValueError):
+    """Raised when a backbone produces an embedding with the wrong dimensionality."""
+
+
 # ---------------------------------------------------------------------------
 # BackboneConfig
 # ---------------------------------------------------------------------------
@@ -136,15 +149,144 @@ class MockBackbone(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Backbone loading helpers
+# ---------------------------------------------------------------------------
+
+
+def _freeze_backbone(model: nn.Module) -> None:
+    """Set all parameters to requires_grad=False and switch to eval mode."""
+    model.eval()
+    for param in model.parameters():
+        param.requires_grad_(False)
+
+
+def _verify_embedding_dim(
+    model: nn.Module, config: BackboneConfig, device: torch.device
+) -> None:
+    """Run a single test forward pass to confirm output dim matches config.embedding_dim.
+
+    Must be called after model.to(device). Raises BackboneDimensionError on mismatch
+    or if the forward pass itself fails.
+    """
+    dummy = torch.zeros(1, 3, 224, 224, device=device)
+    with torch.no_grad():
+        try:
+            out = model(dummy)
+        except Exception as exc:
+            raise BackboneDimensionError(
+                f"Test forward pass failed for backbone {config.name!r}: {exc}"
+            ) from exc
+    if out.ndim != 2 or out.shape[1] != config.embedding_dim:
+        raise BackboneDimensionError(
+            f"Backbone {config.name!r} produced shape {tuple(out.shape)}, "
+            f"expected (1, {config.embedding_dim}). "
+            f"Verify that the classifier head has been removed correctly and "
+            f"that embedding_dim in the backbone config matches the actual output."
+        )
+
+
+def _load_resnet50(config: BackboneConfig, device: torch.device) -> nn.Module:
+    try:
+        from torchvision.models import ResNet50_Weights, resnet50  # noqa: PLC0415
+    except ImportError as exc:
+        raise BackboneUnavailableError(
+            "torchvision is required for ResNet-50. "
+            "Install with: pip install torchvision>=0.18"
+        ) from exc
+    try:
+        model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+    except Exception as exc:
+        raise BackboneUnavailableError(
+            f"Failed to load ResNet-50 weights (IMAGENET1K_V2): {exc}. "
+            f"Check network access or pre-cached weights."
+        ) from exc
+    # Replace fc with Identity to expose the 2048-dim pooled features, not ImageNet logits.
+    model.fc = nn.Identity()
+    _freeze_backbone(model)
+    model.to(device)
+    _verify_embedding_dim(model, config, device)
+    logger.info(
+        "Loaded ResNet-50 backbone (embedding_dim=2048, frozen=True, device=%s)", device
+    )
+    return model
+
+
+def _load_convnext_base(config: BackboneConfig, device: torch.device) -> nn.Module:
+    try:
+        from torchvision.models import ConvNeXt_Base_Weights, convnext_base  # noqa: PLC0415
+    except ImportError as exc:
+        raise BackboneUnavailableError(
+            "torchvision is required for ConvNeXt-Base. "
+            "Install with: pip install torchvision>=0.18"
+        ) from exc
+    try:
+        model = convnext_base(weights=ConvNeXt_Base_Weights.IMAGENET1K_V1)
+    except Exception as exc:
+        raise BackboneUnavailableError(
+            f"Failed to load ConvNeXt-Base weights (IMAGENET1K_V1): {exc}. "
+            f"Check network access or pre-cached weights."
+        ) from exc
+    # classifier = Sequential([LayerNorm2d(1024), Flatten, Linear(1024, 1000)])
+    # Replace the final Linear with Identity → 1024-dim output after LayerNorm2d + Flatten.
+    model.classifier[-1] = nn.Identity()
+    _freeze_backbone(model)
+    model.to(device)
+    _verify_embedding_dim(model, config, device)
+    logger.info(
+        "Loaded ConvNeXt-Base backbone (embedding_dim=1024, frozen=True, device=%s)", device
+    )
+    return model
+
+
+def _load_dinov2(config: BackboneConfig, device: torch.device) -> nn.Module:
+    model_id = config.version  # e.g. "dinov2_vitb14" or "dinov2_vitl14"
+    if not model_id:
+        raise BackboneUnavailableError(
+            f"DINOv2 requires a non-empty 'version' field specifying the hub model "
+            f"identifier (e.g. 'dinov2_vitb14', 'dinov2_vitl14'). "
+            f"Got version={config.version!r} for name={config.name!r}."
+        )
+    try:
+        model = torch.hub.load(
+            "facebookresearch/dinov2",
+            model_id,
+            trust_repo=True,
+            verbose=False,
+        )
+    except Exception as exc:
+        raise BackboneUnavailableError(
+            f"Failed to load DINOv2 model {model_id!r} via torch.hub "
+            f"(repo=facebookresearch/dinov2): {exc}. "
+            f"Ensure weights are cached or network access is available."
+        ) from exc
+    # DINOv2 hub base models output CLS token embeddings directly; no head removal needed.
+    _freeze_backbone(model)
+    model.to(device)
+    _verify_embedding_dim(model, config, device)
+    logger.info(
+        "Loaded DINOv2 backbone %s (embedding_dim=%d, frozen=True, device=%s)",
+        model_id, config.embedding_dim, device,
+    )
+    return model
+
+
+# ---------------------------------------------------------------------------
 # Backbone loading
 # ---------------------------------------------------------------------------
 
 
 def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
-    """Return a ready backbone model on the given device.
+    """Return a ready frozen backbone on the given device.
 
-    Only model_type='mock' is supported in Stage 6.
-    All other model_type values raise NotImplementedError.
+    Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2'.
+
+    Raises
+    ------
+    BackboneUnavailableError
+        If a real backbone cannot be loaded (missing deps, unavailable weights,
+        network failure, or unknown model_type). NEVER falls back to mock silently.
+    BackboneDimensionError
+        If the backbone produces a different embedding_dim than config.embedding_dim.
     """
     if config.model_type == "mock":
         backbone = MockBackbone(embedding_dim=config.embedding_dim)
@@ -156,10 +298,20 @@ def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
         )
         return backbone
 
-    raise NotImplementedError(
-        f"Real backbone loading is not implemented until Stage 7. "
-        f"Received model_type={config.model_type!r}. "
-        f"Use model_type='mock' for Stage 6."
+    if config.model_type == "resnet50":
+        return _load_resnet50(config, device)
+
+    if config.model_type == "convnext_base":
+        return _load_convnext_base(config, device)
+
+    if config.model_type == "dinov2":
+        return _load_dinov2(config, device)
+
+    raise BackboneUnavailableError(
+        f"Unknown or unsupported backbone model_type={config.model_type!r} "
+        f"for backbone name={config.name!r}. "
+        f"Supported types: 'mock', 'resnet50', 'convnext_base', 'dinov2'. "
+        f"Do not add a mock fallback here — unknown backbones must fail loudly."
     )
 
 
