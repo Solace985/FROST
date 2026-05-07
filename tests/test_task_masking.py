@@ -238,3 +238,28 @@ def test_unknown_task_encode_raises_key_error():
 def test_unknown_task_in_metadata_raises(policy):
     with pytest.raises((KeyError, ValueError)):
         build_metadata_features(_make(), "totally_unknown_task_xyz_000", policy, "image_plus_metadata")
+
+
+# ---------------------------------------------------------------------------
+# macular_edema task masking (Patch 7)
+# ---------------------------------------------------------------------------
+
+def test_macular_edema_none_produces_mask_zero():
+    enc = encode_task_target(_make(macular_edema=None), "macular_edema")
+    assert enc.mask == 0.0, "Missing macular_edema must produce mask=0."
+
+def test_macular_edema_none_value_is_placeholder():
+    enc = encode_task_target(_make(macular_edema=None), "macular_edema")
+    assert enc.value == MISSING_CLASS_PLACEHOLDER, (
+        "Missing macular_edema value must be MISSING_CLASS_PLACEHOLDER, not 0."
+    )
+
+def test_macular_edema_zero_is_observed_negative():
+    enc = encode_task_target(_make(macular_edema=0), "macular_edema")
+    assert enc.mask == 1.0, "Observed macular_edema=0 must have mask=1."
+    assert enc.value == 0.0, "Observed macular_edema=0 must encode as 0.0."
+
+def test_macular_edema_one_is_observed_positive():
+    enc = encode_task_target(_make(macular_edema=1), "macular_edema")
+    assert enc.mask == 1.0, "Observed macular_edema=1 must have mask=1."
+    assert enc.value == 1.0, "Observed macular_edema=1 must encode as 1.0."

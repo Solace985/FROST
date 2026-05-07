@@ -1,0 +1,58 @@
+name: brset
+dataset_source: brset
+adapter_class: retina_screen.adapters.brset.BRSETAdapter
+dataset_root: data/brset
+env_override: RETINA_SCREEN_BRSET_ROOT
+metadata_file: labels_brset.csv
+images_dir: fundus_photos
+
+# Native column reference (documentation only; adapter reads these directly).
+# All native column names are private to the adapter; downstream code uses
+# canonical schema fields only.
+native_columns:
+  image_id: image_id
+  patient_id: patient_id
+  camera: camera
+  age: patient_age
+  sex: patient_sex        # 1=Male, 2=Female (BRSET v1.0.1 confirmed)
+  exam_eye: exam_eye      # 1=right, 2=left (BRSET v1.0.1 confirmed)
+  quality: quality
+  dr_canonical: DR_SDRG   # canonical dr_grade source (Stage 8C locked decision)
+  dr_audit: DR_ICDR        # retained in audit metadata only
+  binary_ocular:
+    amd: amd
+    hypertensive_retinopathy: hypertensive_retinopathy
+    drusen: drusens          # BRSET spells this "drusens"; maps to canonical "drusen"
+    macular_edema: macular_edema
+    myopic_fundus: myopic_fundus
+    increased_cup_disc: increased_cup_disc  # anatomical marker; NOT mapped to glaucoma
+  other_ocular_components:
+    - scar
+    - nevus
+    - vascular_occlusion
+    - hemorrhage
+    - retinal_detachment
+    - other
+  systemic:
+    diabetes: diabetes   # may be "yes"/"no" string; PROXY quality
+  dropped_columns:
+    - nationality        # single-valued; no information content
+    - comorbidities      # free text, 50% missing; not parsed in Stage 8C
+    - insuline           # 89% missing; deferred to Stage 8D+
+    - diabetes_time_y    # 88% missing; deferred to Stage 8D+
+
+dr_grading:
+  canonical_source: DR_SDRG
+  audit_retain: DR_ICDR
+  mapping_confidence: exact
+  scheme_name: DR_SDRG
+  note: >
+    DR_SDRG is the canonical dr_grade source per Stage 8C locked decision.
+    DR_ICDR is retained in get_dataset_audit() output only.
+    This is a project canonicalization decision for reproducibility.
+    Not a claim of medical superiority of DR_SDRG over DR_ICDR.
+
+audit:
+  exclude_missing_images: true
+  log_multi_row_patients: true
+  record_dr_sdrg_icdr_disagreement: true

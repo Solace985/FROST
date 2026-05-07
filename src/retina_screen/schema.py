@@ -115,6 +115,7 @@ CANONICAL_LABEL_FIELDS: frozenset[str] = frozenset(
         "glaucoma",
         "cataract",
         "amd",
+        "macular_edema",
         "pathological_myopia",
         "hypertensive_retinopathy",
         "drusen",
@@ -183,6 +184,7 @@ class CanonicalSample(BaseModel):
     glaucoma: Optional[int] = None
     cataract: Optional[int] = None
     amd: Optional[int] = None
+    macular_edema: Optional[int] = None
     pathological_myopia: Optional[int] = None
     hypertensive_retinopathy: Optional[int] = None
     drusen: Optional[int] = None
@@ -222,6 +224,7 @@ class CanonicalSample(BaseModel):
         "glaucoma",
         "cataract",
         "amd",
+        "macular_edema",
         "pathological_myopia",
         "hypertensive_retinopathy",
         "drusen",

@@ -174,6 +174,15 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         label_quality=LabelQuality.HIGH,
         allowed_as_headline=True,
     ),
+    "macular_edema": TaskDefinition(
+        name="macular_edema",
+        task_type=TaskType.BINARY,
+        target_column="macular_edema",
+        loss=LossType.BCE,
+        primary_metric=MetricType.AUROC,
+        label_quality=LabelQuality.HIGH,
+        allowed_as_headline=True,
+    ),
     "other_ocular": TaskDefinition(
         name="other_ocular",
         task_type=TaskType.BINARY,

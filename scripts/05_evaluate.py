@@ -265,6 +265,12 @@ def main() -> None:
         logger.error("No cached embeddings available in any split. Cannot evaluate.")
         sys.exit(1)
 
+    # Smoke run_mode is never a final result regardless of backbone type.
+    # A real backbone + --limit 32 extraction is still a smoke evaluation.
+    if "smoke" in str(cfg.get("run_mode", "")).lower():
+        final_test_result = False
+        eval_reason = "limited_embedding_smoke"
+
     logger.info(
         "Evaluation split=%s (%d samples, reason=%s, final_test_result=%s)",
         eval_split_name, len(eval_sids), eval_reason, final_test_result,

@@ -726,6 +726,140 @@ scripts/07_generate_paper_outputs.py (future)
 
 ---
 
+## Decision 023 — macular_edema Added to Canonical Schema and Task Registry
+
+Status: locked
+
+Decision:
+
+macular_edema is added to CanonicalSample as a binary optional label field and to
+TASK_REGISTRY as a HIGH-quality binary classification task with allowed_as_headline=True.
+
+BRSET (PhysioNet v1.0.1) provides a direct binary macular_edema column (diabetic macular
+edema) graded by ophthalmologists. This is a direct retinal finding, not derived from
+dr_grade or any other column. It is a landmark clinical target.
+
+Implementation:
+- src/retina_screen/schema.py: macular_edema added to CanonicalSample and CANONICAL_LABEL_FIELDS.
+- src/retina_screen/tasks.py: TaskDefinition(name="macular_edema", task_type=BINARY,
+  loss=BCE, primary_metric=AUROC, label_quality=HIGH, allowed_as_headline=True).
+
+Constraints:
+- macular_edema must not be derived from dr_grade.
+- Missing/invalid values must be None, never 0.
+- macular_edema is a retinal finding, not a synonym for diabetic_retinopathy severity.
+
+Files affected:
+
+src/retina_screen/schema.py
+src/retina_screen/tasks.py
+
+---
+
+## Decision 024 — BRSET Canonical DR Grading Source is DR_SDRG
+
+Status: locked
+
+Decision:
+
+DR_SDRG is used as the canonical dr_grade source for BRSET. DR_ICDR is retained in
+get_dataset_audit() audit metadata only and is not exposed through the canonical schema.
+
+Both DR_SDRG and DR_ICDR are 0-4 ordinal grades present in BRSET. Exact disagreement
+between the two systems was recomputed from local data: 327 of 16,266 rows (2.01%).
+Grade-level analysis shows ICDR reclassifies SDRG grades 1 and 3 heavily into grade 2,
+resulting in an anomalous ICDR distribution (grade 3=78 < grade 1=158 < grade 2=451).
+
+This decision is a project canonicalization choice for reproducibility. It is not a
+claim of medical superiority of DR_SDRG over DR_ICDR. DR_ICDR is preserved in the
+dataset audit output for potential later ablation.
+
+The adapter sets dr_grade_source_scheme = "DR_SDRG" and dr_grade_mapping_confidence = EXACT
+for all BRSET samples.
+
+Files affected:
+
+src/retina_screen/adapters/brset.py
+configs/dataset/brset.yaml
+configs/tasks/brset_default.yaml
+
+---
+
+## Decision 025 — BRSET patient_sex and exam_eye Encodings Confirmed
+
+Status: locked
+
+Decision:
+
+From BRSET PhysioNet v1.0.1 documentation:
+- patient_sex: 1 = Male, 2 = Female.
+- exam_eye: 1 = right eye, 2 = left eye.
+
+The adapter maps these to canonical Sex.MALE / Sex.FEMALE / Sex.UNKNOWN and
+EyeLaterality.RIGHT / EyeLaterality.LEFT respectively. Unexpected values map to
+Sex.UNKNOWN or None; they are never guessed.
+
+FeaturePolicy rules still apply:
+- sex must not be used as a feature to predict sex.
+- sex may be used for subgroup / fairness evaluation if the evaluation pipeline
+  supports it safely.
+
+Files affected:
+
+src/retina_screen/adapters/brset.py
+
+---
+
+## Decision 026 — BRSET Stage 8C Adapter Locked Defaults
+
+Status: locked
+
+Decision:
+
+The following BRSET-specific adapter defaults are locked for Stage 8C:
+
+1. increased_cup_disc is NOT mapped to glaucoma. It is an anatomical marker (optic disc
+   enlargement), not a confirmed glaucoma diagnosis. glaucoma = None for all BRSET samples.
+   Glaucoma is listed as unsupported in configs/tasks/brset_default.yaml.
+
+2. cataract is absent from BRSET metadata. cataract = None for all BRSET samples.
+   cataract is listed as unsupported in configs/tasks/brset_default.yaml.
+
+3. hypertensive_retinopathy is a direct fundoscopic retinal finding graded by
+   ophthalmologists. It is NOT systemic hypertension. Do not equate the two.
+
+4. diabetes is a clinical/medical-record label. PROXY quality. Do not overclaim as
+   a retinal-derived or direct systemic diagnosis.
+
+5. comorbidities is free text (213 unique combinations, 50% missing). It is dropped
+   entirely and must not be exposed raw through canonical samples, manifests, logs,
+   or public outputs.
+
+6. Canonical IDs use deterministic pseudonymous format: patient_id = brset_pNNNNNN,
+   sample_id = brset_sNNNNNN, derived from sorted-index mapping of native IDs.
+   Raw native patient_id and image_id values are never embedded in canonical IDs,
+   split files, cache manifests, or cache filenames. Cross-dataset collision is
+   prevented by the brset_p/brset_s namespace.
+
+7. insuline (insulin_use) and diabetes_time_y (diabetes_duration_years) are deferred
+   to Stage 8D+. Both fields have >88% missingness. They are set to None in Stage 8C.
+
+8. BRSET supported tasks for Stage 8C: dr_grade, macular_edema, hypertensive_retinopathy,
+   amd, drusen, other_ocular, diabetes.
+   pathological_myopia is DEFERRED: BRSET myopic_fundus is a fundoscopic/anatomical
+   proxy (indirect finding). The global TASK_REGISTRY marks pathological_myopia as
+   HIGH/headline but per-dataset label-quality override is not yet enforced downstream.
+   Setting pathological_myopia as supported would risk overclaiming. Reconsider in
+   Stage 8D+ once a per-dataset override mechanism exists.
+
+Files affected:
+
+src/retina_screen/adapters/brset.py
+configs/dataset/brset.yaml
+configs/tasks/brset_default.yaml
+
+---
+
 # Open Decisions
 
 These decisions are not locked yet. Ask before implementing if they become relevant.

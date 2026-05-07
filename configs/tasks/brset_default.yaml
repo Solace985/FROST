@@ -1,0 +1,85 @@
+# Tasks supported by BRSET adapter for Stage 8C+.
+#
+# macular_edema: direct binary ophthalmologist-labeled retinal finding (HIGH).
+# hypertensive_retinopathy: direct fundoscopic retinal finding, NOT systemic hypertension.
+# diabetes: clinical/medical-record label (PROXY). Do not overclaim.
+# increased_cup_disc is NOT glaucoma; glaucoma is unsupported for BRSET.
+# cataract is absent from BRSET metadata.
+# pathological_myopia: DEFERRED. myopic_fundus is a fundoscopic/anatomical proxy
+#   (indirect). Per-dataset label-quality override is not yet enforced downstream.
+#   Will reconsider in Stage 8D+ once override mechanism exists.
+
+supported_tasks:
+  - dr_grade
+  - macular_edema
+  - hypertensive_retinopathy
+  - amd
+  - drusen
+  - other_ocular
+  - diabetes
+
+weak_proxy_tasks:
+  - diabetes
+
+headline_allowed:
+  - dr_grade
+  - macular_edema
+  - hypertensive_retinopathy
+  - amd
+  - drusen
+
+non_headline:
+  - other_ocular
+  - diabetes
+
+deferred_tasks:
+  pathological_myopia: >
+    DEFERRED for Stage 8C. myopic_fundus is a fundoscopic/anatomical finding that
+    serves as an indirect proxy for pathological myopia. The global TASK_REGISTRY
+    marks pathological_myopia as HIGH/headline, which overstates quality for BRSET.
+    Deferred until a per-dataset label-quality override mechanism is implemented
+    downstream (Stage 8D+).
+
+unsupported_brset_tasks:
+  glaucoma: >
+    increased_cup_disc is an anatomical marker (optic disc enlargement),
+    not a confirmed glaucoma diagnosis. Glaucoma is deferred for BRSET.
+  cataract: "No cataract column in BRSET metadata."
+  hypertension: >
+    No direct hypertension column. comorbidities is free text, 50% missing,
+    and not reliably parseable in Stage 8C.
+  insulin_use: "insuline column is 89% missing. Deferred to Stage 8D+."
+  diabetes_duration_years: "diabetes_time_y column is 88% missing. Deferred to Stage 8D+."
+  smoking: "No smoking column in BRSET."
+  obesity: "No obesity column in BRSET."
+  cardiovascular_composite: "Not derivable from available BRSET columns."
+  retinal_age: "Not a label in BRSET."
+
+label_sources:
+  dr_grade: >
+    DR_SDRG column (0-4). Canonical source per Stage 8C locked decision.
+    DR_ICDR retained in audit metadata only. Not a claim of medical superiority.
+  macular_edema: >
+    macular_edema column: direct binary ophthalmologist-labeled retinal finding.
+    Not derived from dr_grade. Not confused with DR severity grading.
+  hypertensive_retinopathy: >
+    hypertensive_retinopathy column: direct fundoscopic finding graded by
+    ophthalmologists from retinal images. NOT systemic hypertension.
+  amd: "amd column: direct binary label."
+  drusen: >
+    drusens column: direct binary label.
+    BRSET spelling 'drusens' maps to canonical field 'drusen'.
+  other_ocular: >
+    Computed from: scar + nevus + vascular_occlusion + hemorrhage +
+    retinal_detachment + other. Set to 1 if any component is 1, None if no
+    component is positive and at least one is missing, else 0.
+    retinal_detachment has ~7 positives total; subgroup evaluation will
+    trigger the sparse-subgroup NA safeguard.
+  diabetes: >
+    diabetes column: clinical/medical-record label. PROXY quality.
+    Do not overclaim as retinal-derived or direct systemic diagnosis.
+
+missing_label_behavior:
+  nan_values: "None"
+  missing_native_column: "None"
+  never_treat_nan_as: 0

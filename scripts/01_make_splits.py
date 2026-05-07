@@ -25,7 +25,7 @@ from retina_screen.adapters.dummy import DummyAdapter
 from retina_screen.core import ensure_dir, load_config, seed_everything, setup_logging
 from retina_screen.schema import CanonicalSample
 from retina_screen.splitting import assert_no_patient_overlap, split_patients, write_split
-from retina_screen.tasks import TASK_REGISTRY, LabelQuality
+from retina_screen.tasks import TASK_REGISTRY, LabelQuality, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -76,18 +76,59 @@ def _write_manifest_csv(manifest: list[CanonicalSample], out_path: Path) -> None
 def _label_coverage(
     manifest: list[CanonicalSample],
     supported_tasks: list[str],
-) -> dict[str, dict[str, int]]:
-    coverage: dict[str, dict[str, int]] = {}
+) -> dict[str, dict]:
+    """Task-type-aware label coverage summary.
+
+    BINARY: positives, negatives, missing, total.
+    ORDINAL: class_distribution (grade->count), observed, missing, total.
+    REGRESSION: observed, missing, total.
+    Grade 0 is an observed label, not missing.
+    """
+    coverage: dict[str, dict] = {}
     for task_name in supported_tasks:
-        target_column = TASK_REGISTRY[task_name].target_column
-        positives = sum(1 for sample in manifest if getattr(sample, target_column) == 1)
-        negatives = sum(1 for sample in manifest if getattr(sample, target_column) == 0)
-        missing = sum(1 for sample in manifest if getattr(sample, target_column) is None)
-        coverage[task_name] = {
-            "positives": positives,
-            "negatives": negatives,
-            "missing": missing,
-        }
+        task_def = TASK_REGISTRY[task_name]
+        target_column = task_def.target_column
+        task_type = task_def.task_type
+
+        if task_type == TaskType.BINARY:
+            positives = sum(1 for s in manifest if getattr(s, target_column) == 1)
+            negatives = sum(1 for s in manifest if getattr(s, target_column) == 0)
+            missing = sum(1 for s in manifest if getattr(s, target_column) is None)
+            coverage[task_name] = {
+                "positives": positives,
+                "negatives": negatives,
+                "missing": missing,
+                "total": len(manifest),
+            }
+        elif task_type == TaskType.ORDINAL:
+            class_dist: dict[str, int] = {}
+            missing_count = 0
+            for s in manifest:
+                val = getattr(s, target_column, None)
+                if val is None:
+                    missing_count += 1
+                else:
+                    class_dist[str(val)] = class_dist.get(str(val), 0) + 1
+            observed = sum(class_dist.values())
+            coverage[task_name] = {
+                "class_distribution": dict(
+                    sorted(class_dist.items(), key=lambda kv: int(kv[0]))
+                ),
+                "observed": observed,
+                "missing": missing_count,
+                "total": len(manifest),
+            }
+        else:  # REGRESSION
+            vals = [
+                getattr(s, target_column)
+                for s in manifest
+                if getattr(s, target_column, None) is not None
+            ]
+            coverage[task_name] = {
+                "observed": len(vals),
+                "missing": len(manifest) - len(vals),
+                "total": len(manifest),
+            }
     return coverage
 
 

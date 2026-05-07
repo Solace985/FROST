@@ -52,6 +52,11 @@ _STAGE8A_LIMIT_ERROR = (
     "extraction. Use --limit 32."
 )
 
+_STAGE8C_LIMIT_ERROR = (
+    "Stage 8C smoke configs require --limit to avoid accidental full "
+    "BRSET extraction (16k+ samples). Use --limit 32."
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -129,10 +134,17 @@ def _is_stage8a_verification_config(cfg: dict[str, Any]) -> bool:
     )
 
 
+def _is_stage8c_smoke_config(cfg: dict[str, Any]) -> bool:
+    """Return True for Stage 8C smoke configs that must not extract without --limit."""
+    return str(cfg.get("run_mode", "")).strip().lower() == "stage8c_brset_smoke"
+
+
 def _enforce_stage8a_limit(cfg: dict[str, Any], limit: int | None) -> None:
-    """Fail closed before any extraction for Stage 8A configs without --limit."""
+    """Fail closed before any extraction for guarded smoke configs without --limit."""
     if _is_stage8a_verification_config(cfg) and limit is None:
         raise SystemExit(_STAGE8A_LIMIT_ERROR)
+    if _is_stage8c_smoke_config(cfg) and limit is None:
+        raise SystemExit(_STAGE8C_LIMIT_ERROR)
 
 
 def _latest_splits_csv(dataset: str) -> Path | None:

@@ -1,0 +1,20 @@
+run_mode: stage8c_brset_smoke
+backbone: resnet50
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: brset
+dataset_root: data/brset
+seed: 42
+embedding_dim: 2048
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+smoke_limit: 32
+fast_dev_run: true
+n_epochs: 3
+stage: 8C
+stage_note: "Stage 8C smoke only. Not a scientific baseline."

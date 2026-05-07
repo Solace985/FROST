@@ -250,3 +250,52 @@ def test_metadata_fields_not_empty():
 def test_label_and_metadata_no_overlap():
     overlap = CANONICAL_LABEL_FIELDS & CANONICAL_METADATA_FIELDS
     assert len(overlap) == 0, f"Label/metadata fields overlap: {overlap}"
+
+
+# ---------------------------------------------------------------------------
+# macular_edema canonical schema / task coverage (Patch 7)
+# ---------------------------------------------------------------------------
+
+def test_macular_edema_in_canonical_sample_fields():
+    schema_fields = set(CanonicalSample.model_fields.keys())
+    assert "macular_edema" in schema_fields, (
+        "macular_edema must be a field in CanonicalSample."
+    )
+
+def test_macular_edema_in_canonical_label_fields():
+    assert "macular_edema" in CANONICAL_LABEL_FIELDS, (
+        "macular_edema must be in CANONICAL_LABEL_FIELDS."
+    )
+
+def test_macular_edema_in_task_registry():
+    assert "macular_edema" in TASK_REGISTRY, (
+        "macular_edema must be registered in TASK_REGISTRY."
+    )
+
+def test_macular_edema_task_type_and_quality():
+    task = TASK_REGISTRY["macular_edema"]
+    assert task.task_type == TaskType.BINARY
+    assert task.loss == LossType.BCE
+    assert task.primary_metric == MetricType.AUROC
+    assert task.label_quality == LabelQuality.HIGH
+    assert task.allowed_as_headline is True
+
+def test_macular_edema_binary_validation_accepts_zero():
+    sample = make(macular_edema=0)
+    assert sample.macular_edema == 0
+
+def test_macular_edema_binary_validation_accepts_one():
+    sample = make(macular_edema=1)
+    assert sample.macular_edema == 1
+
+def test_macular_edema_binary_validation_rejects_two():
+    with pytest.raises(ValidationError):
+        make(macular_edema=2)
+
+def test_macular_edema_binary_validation_rejects_minus_one():
+    with pytest.raises(ValidationError):
+        make(macular_edema=-1)
+
+def test_macular_edema_none_is_valid():
+    sample = make(macular_edema=None)
+    assert sample.macular_edema is None
