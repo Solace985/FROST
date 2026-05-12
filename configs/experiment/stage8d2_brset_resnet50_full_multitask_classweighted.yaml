@@ -1,0 +1,43 @@
+run_mode: stage8d2_brset_full_resnet50_multitask_classweighted
+stage: "8D-2"
+stage_note: >
+  Stage 8D-2 class-weighted ResNet-50 rerun — dr_grade minority-class sensitivity experiment.
+  INTERNAL FULL RESULT / PRELIMINARY. Not a paper-final result.
+  final_test_result=false for all evaluation outputs from this config.
+  No headline claims. No paper-facing language.
+  class_weighting_enabled=true — capped inverse-frequency weights for all classification tasks
+  (BINARY and ORDINAL). Weights computed from train split only; masked/missing labels excluded.
+  val/reliability/test labels are never used to compute weights.
+
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+
+backbone: resnet50
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: brset
+
+seed: 42
+embedding_dim: 2048
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+
+fast_dev_run: false
+
+# Class weighting: enabled for this sensitivity experiment.
+# Overrides class_weighting_enabled=false from configs/training/standard.yaml.
+# Experiment config takes precedence over training config on conflict.
+# All classification tasks receive capped inverse-frequency weights:
+#   BINARY tasks:  pos_weight = min(n_neg / n_pos, max_class_weight)
+#   ORDINAL tasks: per-class weight = min(n_valid / (n_classes * n_c), max_class_weight)
+# This is NOT dr_grade-only weighting — all 6 binary tasks are also weighted.
+class_weighting_enabled: true
+max_class_weight: 10.0

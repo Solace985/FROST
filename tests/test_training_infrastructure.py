@@ -432,3 +432,42 @@ def test_compute_masked_task_loss_without_class_weights():
     assert BINARY_TASK in result.losses
     assert BINARY_TASK in result.valid_counts
     assert math.isfinite(result.losses[BINARY_TASK].item())
+
+
+# ---------------------------------------------------------------------------
+# 15. compute_class_weights for ORDINAL task (dr_grade)
+# ---------------------------------------------------------------------------
+
+def test_compute_class_weights_ordinal():
+    """compute_class_weights for an ordinal task returns per-class inverse-frequency weights.
+
+    Verifies that:
+    - A weight tensor of length n_classes is returned.
+    - The majority class receives a lower weight than minority classes.
+    - All weights respect the max_weight cap.
+    - All weights are positive.
+    """
+    # Build 200 samples with class 0 heavily dominant (180 vs 20 for classes 1-4)
+    labels = [0] * 180 + [1] * 10 + [2] * 5 + [3] * 3 + [4] * 2
+    targets = {ORDINAL_TASK: torch.tensor(labels, dtype=torch.float32)}
+    masks = {ORDINAL_TASK: torch.ones(len(labels))}
+
+    weights = compute_class_weights(targets, masks, [ORDINAL_TASK], max_weight=10.0)
+
+    assert ORDINAL_TASK in weights, "Ordinal task must return a weight tensor"
+    w = weights[ORDINAL_TASK]
+    assert w.ndim == 1, "Ordinal weight tensor must be 1D"
+    assert len(w) == 5, f"Expected 5 per-class weights (classes 0-4), got {len(w)}"
+    # Majority class 0 must have lower weight than minority classes
+    assert float(w[0]) < float(w[1]), (
+        f"Class 0 weight {float(w[0]):.4f} must be < class 1 weight {float(w[1]):.4f}"
+    )
+    assert float(w[0]) < float(w[4]), (
+        f"Class 0 weight {float(w[0]):.4f} must be < class 4 weight {float(w[4]):.4f}"
+    )
+    # All weights must respect the cap
+    assert float(w.max()) <= 10.0, (
+        f"Max weight {float(w.max()):.4f} must not exceed max_class_weight=10.0"
+    )
+    # All weights must be positive
+    assert float(w.min()) > 0.0, "All ordinal class weights must be positive"

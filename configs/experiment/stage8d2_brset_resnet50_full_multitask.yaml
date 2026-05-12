@@ -27,10 +27,9 @@ split_output_root: outputs/splits
 run_output_root: runs
 evaluation_output_root: outputs/evaluation
 
-# n_epochs: configs/training/standard.yaml is currently empty (no project-approved value).
-# Using 5 (same as Stage 8D-1 accepted value) as the explicit Stage 8D-2 setting.
-# Override here if a different epoch count is approved for full BRSET training.
-n_epochs: 5
+# max_epochs is provided by configs/training/standard.yaml (100).
+# n_epochs was previously listed here as a Stage 8D-1 holdover; it has been removed
+# because scripts/04_train.py reads max_epochs, not n_epochs, from the merged config.
 fast_dev_run: false
 
 # Extraction: python scripts/03_extract_embeddings.py --config <this_file>
