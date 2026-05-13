@@ -860,6 +860,116 @@ configs/tasks/brset_default.yaml
 
 ---
 
+## Decision 027 — Stage 8D-3 Standard Training Recipe: Unweighted Corrected Baseline; Class-Weighted Run Retained as Sensitivity Variant Only
+
+Status: locked
+
+Decision:
+
+The corrected unweighted ResNet-50 training run (Stage 8D-2, corrected) is the standard and
+default training recipe for all Stage 8D-3 backbone comparison runs (DINOv2, ConvNeXt, RETFound).
+`class_weighting_enabled: false` in `configs/training/standard.yaml` is the default for all
+Stage 8D-3 configs.
+
+The class-weighted ResNet-50 rerun (Stage 8D-2, class-weighted sensitivity experiment) is
+retained as a documented secondary sensitivity result. Its verdict is PASS_WITH_WARNINGS.
+It is not the primary training recipe and is not used as the Stage 8D-3 baseline.
+
+Rationale:
+
+Two full BRSET ResNet-50 training runs were completed under the corrected training
+infrastructure (mini-batch 256, AdamW 1e-4, cosine+warmup LR schedule, early stopping on
+val macro-AUROC, patience=10):
+
+  Run A — Corrected unweighted baseline (class_weighting_enabled=false):
+    Run dir: runs/train/brset_20260512_191830/ (best-val epoch 33)
+    Test metrics: dr_grade balanced_accuracy=0.384, macro_f1=0.388;
+    macular_edema AUROC=0.956, hypertensive_retinopathy AUROC=0.691,
+    amd AUROC=0.875, drusen AUROC=0.729, other_ocular AUROC=0.812,
+    diabetes AUROC=0.847.
+    dr_grade classes 1 (mild) and 2 (moderate): 0 predictions each.
+    Verdict: PASS.
+    Report: outputs/stage8d2_full_resnet50_multitask/2026-05-12T19-50-00/corrected_training_report.md
+
+  Run B — Class-weighted sensitivity experiment (class_weighting_enabled=true,
+    max_class_weight=10.0, applied to ALL classification tasks):
+    Config: configs/experiment/stage8d2_brset_resnet50_full_multitask_classweighted.yaml
+    Run dir: runs/train/brset_20260512_235438/ (best-val epoch 24)
+    Test metrics: dr_grade balanced_accuracy=0.495 (+0.111 over Run A),
+    macro_f1=0.366 (−0.022 vs Run A); class 1 recall=0.364 (up from 0),
+    class 2: 0 TP despite 3 predictions; class 1 precision=0.109 (98 FP / 12 TP);
+    hypertensive_retinopathy AUROC=0.770 (+0.079); binary macro-AUROC delta=+0.011.
+    Verdict: PASS_WITH_WARNINGS.
+    Warnings: macro_f1 decreased (−0.022, below +0.03 improvement threshold); class 2
+    unrecovered (0 TP); class 1 precision very low (10.9%).
+    Report: outputs/stage8d2_full_resnet50_multitask/2026-05-12T20-30-00/class_weighted_training_report.md
+
+Neither run is strictly superior. Run A has higher macro_f1 and no spurious DR predictions.
+Run B has higher balanced_accuracy and partial class 1 recall, but introduces a high
+false-alarm rate for mild DR and does not meet both improvement thresholds simultaneously
+(balanced_accuracy ≥ +0.03 AND macro_f1 ≥ +0.03). Per the evaluation criteria in the
+class-weighted report (§12), this maps to KEEP_BOTH_AS_VARIANTS, not UPGRADE_DEFAULT.
+
+For Stage 8D-3 backbone comparison runs, the unweighted recipe is chosen as the default
+because:
+  1. Run A is the accepted corrected baseline. Using it for all backbone runs ensures that
+     any performance delta between backbones is attributable to the backbone, not the
+     training recipe.
+  2. Run A's macro_f1 is higher (0.388 vs 0.366), making it a more balanced dr_grade metric.
+  3. Class-weighted results carry higher false-alarm risk for rare DR classes, which is
+     undesirable in a systematic backbone comparison.
+  4. The scientific goal of Stage 8D-3 is backbone comparison, not imbalance mitigation.
+     Imbalance mitigation experiments are deferred to a dedicated ablation.
+
+Run B provides a documented data point on the effect of class weighting for the BRSET
+imbalance regime. It is available for reference and may be used as a secondary result in
+reporting.
+
+Reference documents:
+
+  docs/implementation_reference.md §4 — Training hyperparameters (AdamW, cosine+warmup,
+    max 100 epochs, early stopping, batch 256, gradient clip 1.0).
+  docs/implementation_reference.md §13 — Published baselines (Nakayama DR AUC ~0.95,
+    Diabetes AUC ~0.87; Khan Hypertension AUC ~0.79) used to assess whether corrected
+    baseline is in a meaningful range.
+  docs/mvp_build_order.md — Stage 8D→8E→8F→8G ordering. Decision 022 specifies visual
+    diagnostics after the first BRSET baseline.
+  Decision 015 — Kendall uncertainty weighting is the default multi-task loss. Class
+    weighting is an additive option on top of Kendall weighting, not a replacement.
+  Decision 022 — Early visual diagnostics after Stage 8D first BRSET baseline; backbone
+    comparison (Stage 8D-3) follows after.
+  configs/training/standard.yaml — Authoritative hyperparameter source; class_weighting_enabled
+    defaults to false.
+  configs/experiment/stage8d2_brset_resnet50_full_multitask.yaml — Unweighted Stage 8D-2
+    experiment config (the Stage 8D-3 template).
+  configs/experiment/stage8d2_brset_resnet50_full_multitask_classweighted.yaml — Class-weighted
+    sensitivity config (retained, not promoted to default).
+  outputs/splits/brset/20260507_143232/split_audit.json — Patient-level split integrity
+    verified (valid=true, no overlap_pairs, test=1623 samples, 854 patients).
+
+Consequences:
+
+- All Stage 8D-3 experiment configs (DINOv2, ConvNeXt, RETFound) use
+  class_weighting_enabled: false unless an explicit ablation decision overrides this.
+- class_weighting_enabled: true is NOT the default for any future backbone run without
+  a new explicit locked decision.
+- Do not re-run class-weighted variants unless a new explicit decision is made.
+- Do not implement dr_grade-only weighting, focal loss, oversampling, threshold tuning,
+  new loss terms, new heads, or architecture changes to address dr_grade imbalance without
+  a new locked decision. These are deferred.
+- The dr_grade imbalance (93.5% class-0 in BRSET test split) is a dataset characteristic,
+  not a pipeline bug. It is expected to partially resolve with a retinal-adapted backbone
+  (RETFound — Stage 8E scope).
+
+Files affected:
+
+configs/training/standard.yaml
+configs/experiment/stage8d2_brset_resnet50_full_multitask.yaml
+configs/experiment/stage8d2_brset_resnet50_full_multitask_classweighted.yaml
+docs/decisions.md
+
+---
+
 # Open Decisions
 
 These decisions are not locked yet. Ask before implementing if they become relevant.
