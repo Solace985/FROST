@@ -1,8 +1,10 @@
 """
-tests/test_evaluate_checkpoint_selection.py -- Regression test for _latest_run_dir priority.
+tests/test_evaluate_checkpoint_selection.py -- Regression tests for 05_evaluate.py helpers.
 
-Verifies that scripts/05_evaluate.py::_latest_run_dir() prefers runs/train/ over
-runs/fast_dev_run/ when both exist, and falls back to fast_dev_run when train is absent.
+Covers:
+  1. _latest_run_dir priority: runs/train/ preferred over runs/fast_dev_run/, etc.
+  2. _validate_run_dir_for_eval head_type mismatch: hard error for full/internal configs
+     when eval config head_type != run resolved_config head_type.
 """
 
 from __future__ import annotations
@@ -92,3 +94,125 @@ def test_dataset_prefix_filter(evaluate_mod, tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     result = evaluate_mod._latest_run_dir("brset")
     assert result is None, f"Expected None for brset query when only odir run exists, got: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Head-type mismatch validation in _validate_run_dir_for_eval
+# ---------------------------------------------------------------------------
+
+
+def _make_full_run_dir(run_dir: Path, head_type: str | None = None) -> None:
+    """Create a minimal full/internal run directory for testing."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "model_checkpoint.pt").write_bytes(b"")
+    resolved: dict = {
+        "dataset": "brset",
+        "backbone": "resnet50",
+        "task_config": "configs/tasks/brset_default.yaml",
+        "fast_dev_run": False,
+        "rehearsal": False,
+        "run_mode": "stage8d2_brset_full_resnet50_multitask",
+    }
+    if head_type is not None:
+        resolved["head_type"] = head_type
+    import yaml  # noqa: PLC0415
+    (run_dir / "resolved_config.yaml").write_text(
+        yaml.dump(resolved), encoding="utf-8"
+    )
+
+
+def _full_eval_cfg(head_type: str | None = None) -> dict:
+    """Minimal full/internal eval config dict."""
+    cfg: dict = {
+        "dataset": "brset",
+        "backbone": "resnet50",
+        "task_config": "configs/tasks/brset_default.yaml",
+        "full_dataset_run": True,
+    }
+    if head_type is not None:
+        cfg["head_type"] = head_type
+    return cfg
+
+
+def test_head_type_mismatch_linear_probe_eval_multitask_run(evaluate_mod, tmp_path) -> None:
+    """linear_probe eval config + multitask run → hard fail (prevents mislabeled matrix results)."""
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_multitask"
+    _make_full_run_dir(run_dir, head_type="multitask")
+    eval_cfg = _full_eval_cfg(head_type="linear_probe")
+    with pytest.raises(SystemExit) as exc_info:
+        evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
+    assert exc_info.value.code != 0, "Must exit with non-zero code on head_type mismatch"
+
+
+def test_head_type_mismatch_multitask_eval_linear_probe_run(evaluate_mod, tmp_path) -> None:
+    """multitask eval config + linear_probe run → hard fail (reverse direction)."""
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_linear"
+    _make_full_run_dir(run_dir, head_type="linear_probe")
+    eval_cfg = _full_eval_cfg(head_type="multitask")
+    with pytest.raises(SystemExit) as exc_info:
+        evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
+    assert exc_info.value.code != 0, "Must exit with non-zero code on head_type mismatch"
+
+
+def test_head_type_match_linear_probe_both(evaluate_mod, tmp_path) -> None:
+    """linear_probe eval + linear_probe run → passes."""
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_lp"
+    _make_full_run_dir(run_dir, head_type="linear_probe")
+    eval_cfg = _full_eval_cfg(head_type="linear_probe")
+    # Must not raise SystemExit
+    evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
+
+
+def test_head_type_match_multitask_both(evaluate_mod, tmp_path) -> None:
+    """multitask eval + multitask run → passes."""
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_mt"
+    _make_full_run_dir(run_dir, head_type="multitask")
+    eval_cfg = _full_eval_cfg(head_type="multitask")
+    evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
+
+
+def test_head_type_both_missing_normalizes_to_multitask(evaluate_mod, tmp_path) -> None:
+    """Both eval config and run resolved_config missing head_type → normalizes to multitask, passes.
+
+    This is the backward-compatibility path for Stage 8D-2 artifacts.
+    """
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_legacy"
+    _make_full_run_dir(run_dir, head_type=None)  # no head_type in resolved_config
+    eval_cfg = _full_eval_cfg(head_type=None)    # no head_type in eval config
+    # Both normalize to "multitask" → no mismatch → passes
+    evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
+
+
+def test_head_type_eval_missing_run_multitask_passes(evaluate_mod, tmp_path) -> None:
+    """Eval config missing head_type + run head_type=multitask → passes (both normalize to multitask)."""
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_mt2"
+    _make_full_run_dir(run_dir, head_type="multitask")
+    eval_cfg = _full_eval_cfg(head_type=None)
+    evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
+
+
+def test_head_type_eval_config_path_in_error(evaluate_mod, tmp_path) -> None:
+    """eval_config_path must appear in the mismatch error message."""
+    run_dir = tmp_path / "runs" / "train" / "brset_20260511_msg"
+    _make_full_run_dir(run_dir, head_type="multitask")
+    eval_cfg = _full_eval_cfg(head_type="linear_probe")
+
+    import io  # noqa: PLC0415
+    import logging  # noqa: PLC0415
+    log_capture = io.StringIO()
+    handler = logging.StreamHandler(log_capture)
+    handler.setLevel(logging.ERROR)
+    logging.getLogger().addHandler(handler)
+    try:
+        with pytest.raises(SystemExit):
+            evaluate_mod._validate_run_dir_for_eval(
+                run_dir, eval_cfg,
+                eval_config_path="configs/experiment/stage8d3b_brset_resnet50_full_linear_probe.yaml",
+            )
+    finally:
+        logging.getLogger().removeHandler(handler)
+
+    log_output = log_capture.getvalue()
+    assert "stage8d3b" in log_output or "linear_probe" in log_output, (
+        "Error message must mention eval config path or head_type details"
+    )

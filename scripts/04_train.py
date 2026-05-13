@@ -55,7 +55,7 @@ from retina_screen.embeddings import (
 )
 from retina_screen.evaluation import evaluate_predictions
 from retina_screen.feature_policy import FeaturePolicy
-from retina_screen.model import MultiTaskHead
+from retina_screen.model import build_head
 from retina_screen.preprocessing import PreprocessingConfig
 from retina_screen.training import (
     EarlyStopping,
@@ -354,8 +354,9 @@ def main() -> None:
 
     logger.info("Training: %d samples, tasks=%s", len(train_samples), supported_tasks)
 
-    # --- Model ---
-    model = MultiTaskHead(embedding_dim=embedding_dim, task_names=supported_tasks)
+    # --- Model (head type selected from config; defaults to "multitask" for backward compat) ---
+    head_type = str(cfg.get("head_type", "multitask"))
+    model = build_head(embedding_dim=embedding_dim, task_names=supported_tasks, head_type=head_type)
     weighter = KendallUncertaintyWeighting(task_names=supported_tasks)
     params = list(model.parameters()) + list(weighter.parameters())
 
@@ -537,6 +538,7 @@ def main() -> None:
 
     run_metadata = {
         "run_mode": cfg.get("run_mode", "train"),
+        "head_type": head_type,
         "reported_backbone_is_smoke": cfg.get("reported_backbone_is_smoke", False),
         "real_backbone_target": cfg.get("real_backbone_target", ""),
         "fast_dev_run": args.fast_dev_run,

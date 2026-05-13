@@ -50,7 +50,7 @@ from retina_screen.embeddings import (
     load_embedding_manifest,
 )
 from retina_screen.evaluation import evaluate_predictions, evaluate_subgroups
-from retina_screen.model import MultiTaskHead
+from retina_screen.model import build_head
 from retina_screen.preprocessing import PreprocessingConfig, get_preprocessing_hash
 
 logger = logging.getLogger(__name__)
@@ -137,11 +137,16 @@ def _is_full_internal_config(cfg: dict[str, Any]) -> bool:
     return bool(cfg.get("full_dataset_run", False)) or "stage8d2" in run_mode
 
 
-def _validate_run_dir_for_eval(run_dir: Path, eval_cfg: dict[str, Any]) -> None:
+def _validate_run_dir_for_eval(
+    run_dir: Path,
+    eval_cfg: dict[str, Any],
+    eval_config_path: str | None = None,
+) -> None:
     """Validate a run directory for evaluation compatibility.
 
     For full/internal (Stage 8D-2+) configs: all checks are hard errors (sys.exit).
     For smoke/rehearsal fallback: dataset/backbone mismatches are warnings only.
+    head_type mismatch is a hard error for full configs and a warning for smoke.
     """
     is_full = _is_full_internal_config(eval_cfg)
     if not run_dir.exists() or not run_dir.is_dir():
@@ -240,6 +245,24 @@ def _validate_run_dir_for_eval(run_dir: Path, eval_cfg: dict[str, Any]) -> None:
                 run_dir,
             )
             sys.exit(1)
+        # Hard error for head_type mismatch: prevents mislabeling MultiTaskHead
+        # results as LinearProbeHead results (or vice versa) in the backbone/head matrix.
+        _eval_head_type_norm = str(eval_cfg.get("head_type", "multitask")).lower().strip()
+        _run_head_type_norm = str(run_cfg.get("head_type", "multitask")).lower().strip()
+        if _eval_head_type_norm != _run_head_type_norm:
+            _cfg_hint = f" Eval config: {eval_config_path}." if eval_config_path else ""
+            logger.error(
+                "Head type mismatch: eval config has head_type=%r but run directory "
+                "resolved_config.yaml has head_type=%r. "
+                "Evaluating a %r checkpoint with a %r eval config would mislabel "
+                "results in the backbone/head comparison matrix.%s "
+                "Supply the correct --run-dir for this eval config, or correct head_type. "
+                "Run directory: %s.",
+                _eval_head_type_norm, _run_head_type_norm,
+                _run_head_type_norm, _eval_head_type_norm,
+                _cfg_hint, run_dir,
+            )
+            sys.exit(1)
     else:
         if run_cfg.get("dataset") and run_cfg.get("dataset") != eval_cfg.get("dataset"):
             logger.warning(
@@ -248,6 +271,12 @@ def _validate_run_dir_for_eval(run_dir: Path, eval_cfg: dict[str, Any]) -> None:
         if run_cfg.get("backbone") and run_cfg.get("backbone") != eval_cfg.get("backbone"):
             logger.warning(
                 "Backbone mismatch: run=%r, eval=%r.", run_cfg.get("backbone"), eval_cfg.get("backbone")
+            )
+        _eval_ht = str(eval_cfg.get("head_type", "multitask")).lower().strip()
+        _run_ht = str(run_cfg.get("head_type", "multitask")).lower().strip()
+        if _eval_ht != _run_ht:
+            logger.warning(
+                "Head type mismatch (smoke/rehearsal): eval=%r, run=%r.", _eval_ht, _run_ht
             )
 
 
@@ -407,7 +436,7 @@ def main() -> None:
     # --- Resolve checkpoint (explicit selector or fallback discovery) ---
     if args.run_dir is not None:
         run_dir = Path(args.run_dir)
-        _validate_run_dir_for_eval(run_dir, cfg)
+        _validate_run_dir_for_eval(run_dir, cfg, eval_config_path=args.config)
         checkpoint_path = run_dir / "model_checkpoint.pt"
     elif args.checkpoint_path is not None:
         checkpoint_path = Path(args.checkpoint_path)
@@ -415,7 +444,7 @@ def main() -> None:
             logger.error("--checkpoint-path not found: %s", checkpoint_path)
             sys.exit(1)
         run_dir = checkpoint_path.parent
-        _validate_run_dir_for_eval(run_dir, cfg)
+        _validate_run_dir_for_eval(run_dir, cfg, eval_config_path=args.config)
     else:
         if _is_full_internal_config(cfg):
             logger.error(
@@ -499,9 +528,14 @@ def main() -> None:
         final_test_result = False
         eval_reason = "rehearsal_run"
     elif _is_full_internal_config(cfg):
-        # Stage 8D-2 full/internal: preliminary but explicitly not paper-final.
         final_test_result = False
-        eval_reason = "stage8d2_full_internal"
+        # Stage 8D-2 configs keep the stage-specific reason for traceability.
+        # Stage 8D-3+ and other full/internal configs use the generic reason.
+        _reason_run_mode = str(cfg.get("run_mode", "")).lower()
+        if "stage8d2" in _reason_run_mode:
+            eval_reason = "stage8d2_full_internal"
+        else:
+            eval_reason = "full_internal_preliminary"
     elif cfg.get("preliminary", False) or cfg.get("rehearsal", False):
         final_test_result = False
         eval_reason = "preliminary_run"
@@ -524,10 +558,43 @@ def main() -> None:
 
     eval_emb = torch.stack(embeddings_list)
 
+    # --- Determine head_type for checkpoint reconstruction ---
+    # Fallback order (per Stage 8D-3A spec):
+    #   1. resolved_config.yaml exists and is readable → use head_type from it.
+    #   2. resolved_config.yaml exists but is malformed/unreadable → fail clearly.
+    #   3. resolved_config.yaml missing → fall back to experiment config's head_type.
+    #   4. Neither source has head_type → default to "multitask" (backward compat).
+    _resolved_yaml = run_dir / "resolved_config.yaml"
+    if _resolved_yaml.exists():
+        try:
+            _run_cfg = load_config(_resolved_yaml)
+        except Exception as _exc:
+            logger.error(
+                "resolved_config.yaml at %s exists but could not be parsed: %s. "
+                "Cannot safely determine head_type for checkpoint reconstruction. "
+                "Fix or remove the file and re-run evaluation.",
+                _resolved_yaml, _exc,
+            )
+            sys.exit(1)
+        _head_type_source = f"resolved_config ({_resolved_yaml})"
+    else:
+        _run_cfg = cfg
+        _head_type_source = "experiment config (resolved_config.yaml not present)"
+    head_type = str(_run_cfg.get("head_type", "multitask"))
+    logger.info("Head type for checkpoint reconstruction: %r (from %s)", head_type, _head_type_source)
+
     # --- Load model ---
-    model = MultiTaskHead(embedding_dim=embedding_dim, task_names=supported_tasks)
+    model = build_head(embedding_dim=embedding_dim, task_names=supported_tasks, head_type=head_type)
     state = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    model.load_state_dict(state)
+    try:
+        model.load_state_dict(state)
+    except RuntimeError as _exc:
+        logger.error(
+            "Checkpoint at %s could not be loaded into a %r head: %s. "
+            "Check that head_type in resolved_config.yaml matches the checkpoint architecture.",
+            checkpoint_path, head_type, _exc,
+        )
+        sys.exit(1)
     model.eval()
     model.to(device)
     logger.info("Model loaded from checkpoint.")

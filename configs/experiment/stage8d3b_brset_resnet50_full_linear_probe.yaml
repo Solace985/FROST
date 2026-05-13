@@ -1,0 +1,47 @@
+run_mode: stage8d3b_brset_resnet50_full_linear_probe
+stage: "8D-3B"
+stage_note: >
+  Stage 8D-3B: ResNet-50 frozen backbone + LinearProbeHead on full BRSET.
+  INTERNAL FULL RESULT / PRELIMINARY. Not a paper-final result.
+  Compares linear probe vs MultiTaskHead (Stage 8D-2 corrected baseline) for ResNet-50.
+  final_test_result=false for all evaluation outputs from this config.
+  No headline claims. No paper-facing language.
+
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+
+head_type: linear_probe
+
+backbone: resnet50
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: brset
+
+seed: 42
+embedding_dim: 2048
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+
+# class_weighting_enabled inherits false from configs/training/standard.yaml (Decision 027).
+# Do not set class_weighting_enabled: true (Decision 027 locks unweighted as Stage 8D-3 default).
+fast_dev_run: false
+
+# Extraction: NOT needed — reuses existing Stage 8D-2 full BRSET ResNet-50 cache:
+#   cache/embeddings/resnet50/brset/92d0f40b94aea26c/ (16266 samples, full)
+#   preprocessing hash 92d0f40b94aea26c is unchanged.
+
+# Training: python scripts/04_train.py --config <this_file>
+#   head_type: linear_probe → build_head selects LinearProbeHead
+#   KendallUncertaintyWeighting remains unchanged (external to head).
+
+# Evaluation: python scripts/05_evaluate.py --config <this_file> --run-dir <run_dir>
+#   --run-dir or --checkpoint-path is REQUIRED for this config (full_dataset_run=true).
+#   head_type reconstructed from resolved_config.yaml in the run directory.

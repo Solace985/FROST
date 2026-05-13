@@ -1,8 +1,8 @@
 """
-model.py -- Multi-task head for the retinal screening pipeline.
+model.py -- Multi-task heads and head factory for the retinal screening pipeline.
 
-Owns: MultiTaskHead architecture, task-head construction from TASK_REGISTRY,
-MC-dropout helper.
+Owns: MultiTaskHead architecture, LinearProbeHead architecture,
+build_head factory, task-head construction from TASK_REGISTRY, MC-dropout helper.
 
 Must not contain: concrete adapter imports, backbone loading, dataset-specific
 conditionals, optimizer/training loop, evaluation metrics, or paper logic.
@@ -11,7 +11,7 @@ conditionals, optimizer/training loop, evaluation metrics, or paper logic.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import Any, Sequence
 
 import torch
 import torch.nn as nn
@@ -156,6 +156,151 @@ class MultiTaskHead(nn.Module):
     @property
     def task_names(self) -> list[str]:
         return list(self._task_names)
+
+
+class LinearProbeHead(nn.Module):
+    """True linear probe: one nn.Linear per task, directly from backbone embeddings.
+
+    No hidden layers, no activation, no dropout, no metadata branch, no fusion trunk,
+    no cross-attention, no MC-dropout. A strict linear mapping from embedding to logits.
+
+    Forward contract identical to MultiTaskHead: returns dict[task_name, Tensor].
+
+    Output shapes:
+    - BINARY / REGRESSION tasks: (batch_size,)  [squeezed from (B, 1)]
+    - ORDINAL tasks:             (batch_size, num_classes)
+
+    The ``metadata`` argument is accepted for API compatibility with MultiTaskHead
+    but is always ignored. Pass metadata=None for clean usage.
+
+    Does not load pretrained backbone weights. Backbone extraction is handled
+    by embeddings.py.
+    """
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        task_names: Sequence[str],
+    ) -> None:
+        super().__init__()
+        self._task_names = list(task_names)
+
+        # Validate all task names and definitions before building any modules.
+        for tn in task_names:
+            if tn not in TASK_REGISTRY:
+                raise KeyError(
+                    f"Task {tn!r} not found in TASK_REGISTRY. "
+                    f"Register it in tasks.py first. "
+                    f"Available: {sorted(TASK_REGISTRY)}"
+                )
+            task = TASK_REGISTRY[tn]
+            if task.task_type == TaskType.ORDINAL and task.num_classes is None:
+                raise ValueError(
+                    f"Ordinal task {tn!r} has num_classes=None in TASK_REGISTRY."
+                )
+
+        # One Linear per task: embedding_dim → output_size (no hidden layers).
+        self.task_heads = nn.ModuleDict()
+        for tn in task_names:
+            task = TASK_REGISTRY[tn]
+            if task.task_type in (TaskType.BINARY, TaskType.REGRESSION):
+                output_size = 1
+            else:
+                output_size = task.num_classes  # type: ignore[assignment]
+            self.task_heads[tn] = nn.Linear(embedding_dim, output_size)
+
+    def forward(
+        self,
+        embedding: torch.Tensor,
+        metadata: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Forward pass; returns per-task logits.
+
+        Parameters
+        ----------
+        embedding:
+            (batch_size, embedding_dim) float tensor.
+        metadata:
+            Accepted for API compatibility; always ignored.
+
+        Returns
+        -------
+        dict[task_name, Tensor]
+            Binary/regression → (B,); ordinal → (B, num_classes).
+        """
+        if metadata is not None:
+            logger.debug(
+                "LinearProbeHead has no metadata branch; metadata tensor ignored."
+            )
+        outputs: dict[str, torch.Tensor] = {}
+        for tn in self._task_names:
+            task = TASK_REGISTRY[tn]
+            out = self.task_heads[tn](embedding)
+            if task.task_type in (TaskType.BINARY, TaskType.REGRESSION):
+                out = out.squeeze(-1)  # (B, 1) → (B,)
+            outputs[tn] = out
+        return outputs
+
+    @property
+    def task_names(self) -> list[str]:
+        return list(self._task_names)
+
+
+# ---------------------------------------------------------------------------
+# Head factory
+# ---------------------------------------------------------------------------
+
+_VALID_HEAD_TYPES: tuple[str, ...] = ("multitask", "multitask_default", "linear_probe")
+
+
+def build_head(
+    embedding_dim: int,
+    task_names: Sequence[str],
+    head_type: str = "multitask",
+    **kwargs: Any,
+) -> nn.Module:
+    """Construct a task head by type name.
+
+    Parameters
+    ----------
+    embedding_dim:
+        Dimension of the backbone embedding fed to the head.
+    task_names:
+        Task names; all must be present in TASK_REGISTRY.
+    head_type:
+        ``"multitask"`` (default) or ``"linear_probe"``.
+        When absent from config, defaults to ``"multitask"`` for backward
+        compatibility with all Stage 8D-2 and earlier checkpoints.
+    **kwargs:
+        Forwarded to MultiTaskHead only (e.g. hidden_dim, dropout, metadata_dim).
+        LinearProbeHead accepts no extra arguments; passing any raises ValueError
+        to prevent config mistakes from being silently ignored.
+
+    Raises
+    ------
+    ValueError
+        If head_type is not a known value, or if unsupported kwargs are passed
+        to LinearProbeHead.
+    """
+    ht = str(head_type).lower().strip()
+    if ht in ("multitask", "multitask_default"):
+        return MultiTaskHead(
+            embedding_dim=embedding_dim, task_names=task_names, **kwargs
+        )
+    if ht == "linear_probe":
+        if kwargs:
+            raise ValueError(
+                f"LinearProbeHead does not accept extra constructor arguments. "
+                f"Unsupported kwargs passed: {sorted(kwargs.keys())}. "
+                f"Remove them from the config or the build_head call."
+            )
+        return LinearProbeHead(embedding_dim=embedding_dim, task_names=task_names)
+    raise ValueError(
+        f"Unknown head_type={head_type!r}. "
+        f"Valid values: {_VALID_HEAD_TYPES}. "
+        f"Add 'head_type: multitask' or 'head_type: linear_probe' to the experiment config, "
+        f"or omit head_type to default to multitask."
+    )
 
 
 def activate_mc_dropout(model: nn.Module) -> None:
