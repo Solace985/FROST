@@ -1,0 +1,47 @@
+run_mode: stage8d3c_brset_convnext_full_multitask
+stage: "8D-3C"
+stage_note: >
+  Stage 8D-3C: ConvNeXt-Base frozen backbone + MultiTaskHead on full BRSET.
+  INTERNAL FULL RESULT / PRELIMINARY. Not a paper-final result.
+  Compares ConvNeXt-Base vs ResNet-50 (Stage 8D-2 corrected baseline) for MultiTaskHead.
+  final_test_result=false for all evaluation outputs from this config.
+  No headline claims. No paper-facing language.
+
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+
+head_type: multitask
+
+backbone: convnext_base
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+preprocessing_config: configs/preprocessing/default_224.yaml
+dataset: brset
+
+seed: 42
+embedding_dim: 1024
+mode: image_only
+cache_root: cache/embeddings
+split_output_root: outputs/splits
+run_output_root: runs
+evaluation_output_root: outputs/evaluation
+
+# class_weighting_enabled inherits false from configs/training/standard.yaml (Decision 027).
+# Do not set class_weighting_enabled: true (Decision 027 locks unweighted as Stage 8D-3 default).
+fast_dev_run: false
+
+# Extraction: python scripts/03_extract_embeddings.py --config <this_file>
+#   backbone: convnext_base → cache/embeddings/convnext_base/brset/<hash>/
+#   full_dataset_run=true → extraction guard does not fire; --limit not needed.
+#
+# Training: python scripts/04_train.py --config <this_file>
+#   head_type: multitask → build_head selects MultiTaskHead
+#   KendallUncertaintyWeighting remains unchanged (external to head).
+#
+# Evaluation: python scripts/05_evaluate.py --config <this_file> --run-dir <run_dir>
+#   --run-dir is REQUIRED for this config (full_dataset_run=true).
+#   head_type reconstructed from resolved_config.yaml in the run directory.
