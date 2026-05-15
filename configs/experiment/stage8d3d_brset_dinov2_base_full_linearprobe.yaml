@@ -1,0 +1,18 @@
+run_mode: stage8d3d_brset_dinov2_base_full_linearprobe
+stage: "8D-3D"
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+head_type: linear_probe
+backbone: dinov2_base
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+dataset: brset
+seed: 42
+embedding_dim: 768
+# class_weighting_enabled inherits false from configs/training/standard.yaml (Decision 027)
+# Reuses DINOv2-Base BRSET cache from multitask run — no re-extraction needed
+fast_dev_run: false
