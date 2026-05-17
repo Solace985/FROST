@@ -970,6 +970,92 @@ docs/decisions.md
 
 ---
 
+## Decision 028 — Stage 8D-3D DINOv2-Base Post-Run Issue Handling and Pre-DINOv2-Large Storage Guard
+
+Status: locked
+
+Decision:
+
+This decision records six issues surfaced during Stage 8D-3D strict review and their handling.
+It does not authorise any result-optimisation, re-extraction, or new training work.
+
+1. W1 — Embedding cache storage-view compaction (patched before DINOv2-Large):
+
+   Root cause: `backbone(tensor).squeeze(0).cpu()` in `src/retina_screen/embeddings.py`
+   saved the CLS token as a PyTorch view into the full ViT token-sequence backing storage.
+   For DINOv2-Base ViT-B/14 (257 tokens) this inflated each .pt file to ~773 KB instead of
+   ~3 KB; total cache grew to 12.875 GB instead of ~50 MB.  Storage ratio = 257x.
+
+   Fix applied in `src/retina_screen/embeddings.py`:
+   - Added private helper `_compact_embedding(raw)` that calls
+     `.detach().cpu().clone().contiguous()` to break the storage-view link before saving.
+   - Extraction line updated to call `_compact_embedding(backbone(tensor).squeeze(0))`.
+   - Regression tests added in `tests/test_embedding_storage.py`.
+
+   DINOv2-Large extraction is blocked until this patch and regression tests are committed
+   and pass (enforced by this decision).
+
+   Existing DINOv2-Base cache (12.875 GB) is not re-extracted or overwritten — strict review
+   confirmed all embeddings load with shape (768,), dtype float32, no NaN/Inf, correct
+   provenance and metrics.  The cache remains valid for reuse via its existing manifest.
+
+   Any future DINOv2-Base cache compaction is a separate maintenance step requiring explicit
+   user approval and is not part of this patch.
+
+2. Existing DINOv2-Base cache and results accepted:
+
+   Both Stage 8D-3D runs accepted after PHASE A strict review (verdict PASS_WITH_WARNINGS,
+   no critical issue, no FAIL gate).  Results are preliminary, internal, and non-paper-final
+   (final_test_result=false in both evaluation_summary.json files).
+
+   DINOv2-Base MultiTaskHead test binary macro-AUROC = 0.8745 (best in Stage 8D-3 matrix).
+   DINOv2-Base LinearProbeHead test binary macro-AUROC = 0.8506.
+
+3. dr_grade classes 1/2 limitation not patched during Stage 8D-3:
+
+   Classes 1 (mild DR) and 2 (moderate DR) receive zero or near-zero predictions under the
+   locked unweighted frozen-embedding protocol.  This is a dataset imbalance characteristic
+   (93.5% class-0 in BRSET test split), not a pipeline bug.  Do not add class weighting,
+   focal loss, oversampling, threshold tuning, ordinal loss, or any new loss terms during
+   Stage 8D-3.  These are deferred to a dedicated ablation after matrix lock.
+
+4. LinearProbe full-epoch / no-early-stopping behaviour not patched during Stage 8D-3:
+
+   The LP head ran all 100 epochs without early stopping (best_epoch=99).  This is expected
+   behaviour for a shallower head under the locked recipe.  Increasing max_epochs or tuning
+   patience during the active matrix is forbidden because it would break locked recipe
+   comparability (Decision 027).  Optional extended-epoch sensitivity can be considered only
+   after matrix lock with a new explicit locked decision.
+
+5. Unicode arrow logging cosmetic issue deferred:
+
+   Windows console may render "→" as garbled characters.  This is a cosmetic display artifact
+   only; it does not affect log files, metrics, or results.  Not patched during Stage 8D-3.
+   Optional later cleanup only; do not refactor logging broadly.
+
+6. RETFound remains deferred:
+
+   RETFound weights and access remain unavailable.  RETFound is not part of the active
+   Stage 8D-3 backbone comparison matrix.  No timeline is set.  This is not a blocker for
+   accepting DINOv2-Base, ConvNeXt-Base, or ResNet-50 results.
+
+Consequences:
+
+- DINOv2-Large extraction MUST NOT begin until the W1 patch and regression tests in
+  `tests/test_embedding_storage.py` are committed and all tests pass.
+- Existing DINOv2-Base cache (12.875 GB) is valid for reuse and must not be deleted or
+  overwritten without explicit user approval.
+- `class_weighting_enabled: false` remains the Stage 8D-3 default (Decision 027).
+- Do not implement any result-optimisation changes without a new explicit locked decision.
+
+Files affected:
+
+src/retina_screen/embeddings.py
+tests/test_embedding_storage.py
+docs/decisions.md
+
+---
+
 # Open Decisions
 
 These decisions are not locked yet. Ask before implementing if they become relevant.

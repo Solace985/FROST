@@ -372,6 +372,23 @@ def _validate_embedding_shape(
 
 
 # ---------------------------------------------------------------------------
+# Embedding compaction
+# ---------------------------------------------------------------------------
+
+
+def _compact_embedding(raw: torch.Tensor) -> torch.Tensor:
+    """Detach, move to CPU, and clone to compact independent storage before saving.
+
+    ViT-based backbones (e.g. DINOv2) return the CLS token as a view into the full
+    token-sequence backing storage.  Saving that view with torch.save serialises the
+    entire backing buffer (e.g. 257 × 768 × 4 = 789 KB) instead of the 768 visible
+    elements (3 KB).  .clone() breaks the storage link; .contiguous() guarantees a
+    sequential layout so the saved file is exactly numel × element_size bytes.
+    """
+    return raw.detach().cpu().clone().contiguous()
+
+
+# ---------------------------------------------------------------------------
 # Save / load individual embeddings
 # ---------------------------------------------------------------------------
 
@@ -655,7 +672,7 @@ def extract_embeddings(
                 # Extract embedding.
                 img = image_loader(sample)
                 tensor = pipeline(img).unsqueeze(0).to(device)   # (1, C, H, W)
-                embedding = backbone(tensor).squeeze(0).cpu()    # (embedding_dim,)
+                embedding = _compact_embedding(backbone(tensor).squeeze(0))    # (embedding_dim,)
                 _validate_embedding_shape(
                     embedding, backbone_config.embedding_dim, cache_path
                 )
