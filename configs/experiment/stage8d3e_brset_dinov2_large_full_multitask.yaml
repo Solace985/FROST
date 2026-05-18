@@ -1,0 +1,17 @@
+run_mode: stage8d3e_brset_dinov2_large_full_multitask
+stage: "8D-3E"
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+head_type: multitask
+backbone: dinov2_large
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+dataset: brset
+seed: 42
+embedding_dim: 1024
+# class_weighting_enabled inherits false from configs/training/standard.yaml (Decision 027)
+fast_dev_run: false
