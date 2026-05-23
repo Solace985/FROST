@@ -380,6 +380,110 @@ def _build_diagnostics(
 
 
 # ---------------------------------------------------------------------------
+# Per-sample prediction persistence (Stage 8D-3.5 A1 patch)
+# ---------------------------------------------------------------------------
+
+
+def _save_per_sample_predictions(
+    eval_out_dir: Path,
+    eval_samples: list,
+    supported_tasks: list[str],
+    preds_np: dict,
+    targets: dict,
+    masks: dict,
+    git_sha: str = "unknown",
+) -> None:
+    """Save per-sample predictions, labels, and masks for downstream bootstrap CI.
+
+    Stage 8D-3.5 A1 patch. Saves ``predictions.npz`` and
+    ``predictions_schema.json`` alongside the aggregate metrics in
+    *eval_out_dir*.
+
+    Field name convention in the npz: ``logit__<task>``, ``label__<task>``,
+    ``mask__<task>`` (double-underscore separator).  Logits are saved raw
+    (pre-sigmoid / pre-softmax) at float32 precision.  The downstream A1
+    bootstrap utility applies sigmoid (binary) or per-class softmax (ordinal)
+    when computing per-resample AUROCs.
+    """
+    from retina_screen.tasks import TASK_REGISTRY, TaskType  # noqa: PLC0415
+
+    n_save = len(eval_samples)
+    save_arrays: dict[str, np.ndarray] = {
+        "sample_id": np.array([s.sample_id for s in eval_samples], dtype=object),
+        "patient_id": np.array([s.patient_id for s in eval_samples], dtype=object),
+    }
+    for t in supported_tasks:
+        logit = np.asarray(preds_np[t])
+        label = np.asarray(targets[t])
+        mask  = np.asarray(masks[t])
+        if logit.shape[0] != n_save or label.shape[0] != n_save or mask.shape[0] != n_save:
+            raise RuntimeError(
+                f"Per-sample save alignment error for task {t!r}: "
+                f"logit.shape={logit.shape} label.shape={label.shape} "
+                f"mask.shape={mask.shape} n_eval={n_save}"
+            )
+        save_arrays[f"logit__{t}"] = logit
+        save_arrays[f"label__{t}"] = label
+        save_arrays[f"mask__{t}"]  = mask
+
+    npz_path = eval_out_dir / "predictions.npz"
+    np.savez_compressed(str(npz_path), **save_arrays)
+
+    score_orientation: dict = {}
+    for t in supported_tasks:
+        tt = TASK_REGISTRY[t].task_type
+        if tt == TaskType.BINARY:
+            score_orientation[t] = {
+                "score_format": "raw_logit",
+                "higher_means_positive": True,
+                "transform_to_probability": "sigmoid",
+            }
+        elif tt == TaskType.ORDINAL:
+            score_orientation[t] = {
+                "score_format": "raw_per_class_logit",
+                "logit_shape": "n_samples x n_classes",
+                "higher_means_positive_for_class": True,
+                "transform_to_probability": "softmax_per_class",
+            }
+
+    schema: dict = {
+        "n_eval_samples": n_save,
+        "tasks": list(supported_tasks),
+        "task_types": {
+            t: (
+                "binary" if TASK_REGISTRY[t].task_type == TaskType.BINARY
+                else "ordinal_5class" if TASK_REGISTRY[t].task_type == TaskType.ORDINAL
+                else str(TASK_REGISTRY[t].task_type)
+            )
+            for t in supported_tasks
+        },
+        "logit_dtype": {t: str(np.asarray(preds_np[t]).dtype) for t in supported_tasks},
+        "label_dtype": {t: str(np.asarray(targets[t]).dtype) for t in supported_tasks},
+        "mask_dtype":  {t: str(np.asarray(masks[t]).dtype)   for t in supported_tasks},
+        "score_orientation": score_orientation,
+        "masking_convention": {
+            "mask_meaning": "1.0 = observed and used; 0.0 = missing, excluded",
+            "missing_label_placeholder": -1.0,
+        },
+        "field_name_convention": "logit__<task>, label__<task>, mask__<task>",
+        "sample_id_field": "sample_id",
+        "patient_id_field": "patient_id",
+        "evaluation_script_git_commit": git_sha,
+        "evaluation_script_path": "scripts/05_evaluate.py",
+        "produced_by_patch": "Stage 8D-3.5 A1 patch",
+    }
+    schema_path = eval_out_dir / "predictions_schema.json"
+    with schema_path.open("w", encoding="utf-8") as fh:
+        json.dump(schema, fh, indent=2)
+
+    logger.info(
+        "Saved predictions.npz (%d samples, %d tasks) to %s",
+        n_save, len(supported_tasks), npz_path,
+    )
+    logger.info("Saved predictions_schema.json to %s", schema_path)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -704,6 +808,20 @@ def main() -> None:
         logger.info("Saved diagnostics.json")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not compute diagnostics: %s", exc)
+
+    # --- Per-sample persistence for downstream bootstrap CI (Stage 8D-3.5 A1 patch) ---
+    try:
+        import subprocess as _sp  # noqa: PLC0415
+        _git_sha = _sp.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False,
+        ).stdout.strip() or "unknown"
+    except Exception:  # noqa: BLE001
+        _git_sha = "unknown"
+    _save_per_sample_predictions(
+        eval_out_dir, eval_samples, supported_tasks,
+        preds_np, batch.targets, batch.masks, _git_sha,
+    )
 
     logger.info("Evaluation complete. Metrics saved to: %s", eval_out_dir)
 
