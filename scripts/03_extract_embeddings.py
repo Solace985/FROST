@@ -107,6 +107,7 @@ def _build_backbone_config(cfg: dict) -> tuple[BackboneConfig, dict]:
         embedding_dim=int(backbone_raw["embedding_dim"]),
         model_type=backbone_raw["model_type"],
         version=backbone_raw.get("version", ""),
+        checkpoint_path=backbone_raw.get("checkpoint_path", ""),
     )
     return config, backbone_raw
 

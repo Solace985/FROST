@@ -31,10 +31,11 @@ overwrite=False contract
 
 overwrite=True: always re-extract regardless of existing state.
 
-Real backbone support (Stage 8A)
----------------------------------
-Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2'.
-RETFound is deferred (missing transformers/timm/huggingface_hub and HF auth).
+Real backbone support (Stage 8A / 8D-3.5-B2)
+---------------------------------------------
+Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green'.
+Original RETFound/RETFound-MEH remains deferred/access-pending and is not part of B2.
+RETFound-Green uses timm (vit_small_patch14_reg4_dinov2, 384-dim, matched-224, Decision 029).
 Unknown model_type raises BackboneUnavailableError — never falls back silently to mock.
 """
 
@@ -43,6 +44,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -110,10 +112,11 @@ class BackboneDimensionError(ValueError):
 class BackboneConfig:
     """Backbone identity and output specification."""
 
-    name: str            # "mock", "dinov2_large", etc.
+    name: str            # "mock", "dinov2_large", "retfound_green", etc.
     embedding_dim: int   # output dimensionality, e.g. 1024
-    model_type: str      # "mock" | "dinov2" | "retfound" | "convnext" | "resnet"
+    model_type: str      # "mock" | "dinov2" | "retfound_green" | "convnext_base" | "resnet50"
     version: str = ""    # version string; empty for mock
+    checkpoint_path: str = ""  # local path to weights file; used by timm-loaded backbones
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +273,102 @@ def _load_dinov2(config: BackboneConfig, device: torch.device) -> nn.Module:
     return model
 
 
+def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Module:
+    """Load RETFound-Green (ViT-S/14-reg4-dinov2) via timm for matched-224 matrix extraction.
+
+    Architecture: vit_small_patch14_reg4_dinov2, embedding_dim=384.
+    B2 protocol: matched-224/default_224/CLS-token (Decision 029).
+    Native-392/avg-pool is explicitly deferred per Decision 029.
+
+    Representation note
+    -------------------
+    timm default global_pool for this ViT model is 'token' (CLS-token extraction),
+    consistent with DINOv2-style matrix behaviour.  DO NOT set model.global_pool = 'avg'
+    here — that is the native-392 protocol which is conditionally deferred.
+
+    Positional-embedding interpolation note
+    ----------------------------------------
+    The released weights were trained at 392×392.  timm automatically interpolates
+    positional embeddings when loading at 224×224.  This is expected and documented
+    (Decision 029).
+
+    Checkpoint
+    ----------
+    Set BackboneConfig.checkpoint_path (populated from backbone YAML 'checkpoint_path'
+    field by scripts/_build_backbone_config) or the environment variable
+    RETFOUND_GREEN_CHECKPOINT.  Both empty → BackboneUnavailableError (no silent fallback).
+
+    Raises
+    ------
+    BackboneUnavailableError
+        timm not installed; checkpoint path empty; checkpoint file absent;
+        timm model creation fails; output dim mismatch.
+    """
+    try:
+        import timm  # noqa: PLC0415
+    except ImportError as exc:
+        raise BackboneUnavailableError(
+            "timm is required for RETFound-Green. "
+            "Install with: pip install 'timm>=0.9' (or add to the 'torch' extras group)."
+        ) from exc
+
+    _TIMM_MODEL_NAME = "vit_small_patch14_reg4_dinov2"
+
+    # Verify the model is available in the installed timm version.
+    available = [m for m in timm.list_models() if _TIMM_MODEL_NAME in m]
+    if not available:
+        raise BackboneUnavailableError(
+            f"timm {timm.__version__} does not list {_TIMM_MODEL_NAME!r}. "
+            f"Upgrade timm: pip install 'timm>=0.9'."
+        )
+
+    # Resolve checkpoint path: YAML field takes precedence, then env var.
+    checkpoint_path = config.checkpoint_path or os.environ.get(
+        "RETFOUND_GREEN_CHECKPOINT", ""
+    )
+    if not checkpoint_path:
+        raise BackboneUnavailableError(
+            "RETFound-Green requires a checkpoint. Set 'checkpoint_path' in "
+            "configs/backbone/retfound_green_matched224.yaml to the local path of "
+            "retfoundgreen_statedict.pth, or set the environment variable "
+            "RETFOUND_GREEN_CHECKPOINT=/path/to/retfoundgreen_statedict.pth. "
+            "Download (Apache-2.0, no access gate): "
+            "https://github.com/justinengelmann/RETFound_Green/releases/download/"
+            "v0.1/retfoundgreen_statedict.pth"
+        )
+    if not Path(checkpoint_path).exists():
+        raise BackboneUnavailableError(
+            f"RETFound-Green checkpoint not found at {checkpoint_path!r}. "
+            "Download from: https://github.com/justinengelmann/RETFound_Green/"
+            "releases/download/v0.1/retfoundgreen_statedict.pth"
+        )
+
+    try:
+        model = timm.create_model(
+            _TIMM_MODEL_NAME,
+            img_size=(224, 224),    # B2 matched-224 protocol (NOT native 392, Decision 029)
+            num_classes=0,           # Return global pool output (no classifier head)
+            checkpoint_path=checkpoint_path,
+        )
+    except Exception as exc:
+        raise BackboneUnavailableError(
+            f"Failed to load RETFound-Green via timm ({_TIMM_MODEL_NAME!r}): {exc}. "
+            f"Verify checkpoint integrity and timm compatibility (installed: {timm.__version__})."
+        ) from exc
+
+    # B2 matched-224 CLS protocol: DO NOT set model.global_pool = 'avg'.
+    # Default global_pool for this ViT = 'token' (CLS), matching DINOv2 matrix behaviour.
+    _freeze_backbone(model)
+    model.to(device)
+    _verify_embedding_dim(model, config, device)
+    logger.info(
+        "Loaded RETFound-Green backbone %s (embedding_dim=%d, input_size=224, "
+        "protocol=matched-224/CLS, frozen=True, device=%s)",
+        _TIMM_MODEL_NAME, config.embedding_dim, device,
+    )
+    return model
+
+
 # ---------------------------------------------------------------------------
 # Backbone loading
 # ---------------------------------------------------------------------------
@@ -278,7 +377,8 @@ def _load_dinov2(config: BackboneConfig, device: torch.device) -> nn.Module:
 def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
     """Return a ready frozen backbone on the given device.
 
-    Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2'.
+    Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2',
+    'retfound_green'.
 
     Raises
     ------
@@ -307,10 +407,13 @@ def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
     if config.model_type == "dinov2":
         return _load_dinov2(config, device)
 
+    if config.model_type == "retfound_green":
+        return _load_retfound_green(config, device)
+
     raise BackboneUnavailableError(
         f"Unknown or unsupported backbone model_type={config.model_type!r} "
         f"for backbone name={config.name!r}. "
-        f"Supported types: 'mock', 'resnet50', 'convnext_base', 'dinov2'. "
+        f"Supported types: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green'. "
         f"Do not add a mock fallback here — unknown backbones must fail loudly."
     )
 
