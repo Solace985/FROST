@@ -465,19 +465,43 @@ RETFound has been benchmarked on BRSET in its own publication.
 Architecture and published performance specifics must be confirmed against the paper before
 manuscript use — do not assert them as settled here.
 
-**Unresolved methodological fork (DEFERRED-PENDING-SUBDECISION):**
-Two valid evaluation modes for RETFound exist:
-- **Matrix-matched mode:** resize to 224px, extract CLS token — maximally comparable to
-  DINOv2/ConvNeXt/ResNet in the Stage 8D-3 matrix.
-- **Native mode:** use RETFound's native 392px input, average-pool over patch tokens —
-  matches the design described in the RETFound paper and gives the most favorable
-  comparison against its published numbers.
+**B1-verified (2026-05-24):**
+- Weights: publicly accessible, GitHub release (Apache-2.0, no access gate).
+  URL: https://github.com/justinengelmann/RETFound_Green/releases/download/v0.1/retfoundgreen_statedict.pth
+- Architecture: ViT-Small/14-reg4-dinov2 (Engelmann & Bernabeu, Nature Comms 2025).
+  Embedding dim: **384**. Native input: 392×392, avg pooling.
+- Pretraining corpus (~75K retinal images): AIROGS (53,327), DDR (full), ODIR-2019 (full).
+  Source: arXiv 2405.00117 §2.1.
+- Contamination check (BRSET / mBRSET / IDRiD / Messidor / APTOS / RFMiD): none present.
+  Not blocked for BRSET primary matrix.
+- ODIR caveat (extended): RETFound-Green pretraining includes ODIR-2019. This project uses
+  ODIR-5K, which is the same dataset family. RETFound-Green must NOT be used for external
+  validation on **ODIR in any form** (ODIR-2019, ODIR-5K, or any ODIR derivative), as that
+  would constitute pretraining/evaluation overlap.
+- timm positional-embedding interpolation: when loading 392×392-trained weights at 224×224
+  inference, timm automatically interpolates positional embeddings. This is expected
+  behaviour for matched-224 protocol but introduces a mild positional-encoding mismatch
+  relative to the native 392×392 published configuration.
+- B2 primary protocol: matched-224/default_224 (subdecision resolved — see below).
+- B1 closeout report: outputs/stage8d35_b1_verification/20260524T160259Z/b1_retfound_green_closeout_report.md
+- Decision 029 records the pretraining-overlap and matched-protocol policy.
 
-These may give different results. The choice must be a locked decision before extraction.
-Record as DEFERRED-PENDING-SUBDECISION until explicit user decision.
+**Methodological fork — subdecision resolved (2026-05-24):**
+Two valid evaluation modes for RETFound-Green exist:
+- **Matrix-matched mode (B2 primary):** resize to 224px, extract CLS token — maximally
+  comparable to DINOv2/ConvNeXt/ResNet in the Stage 8D-3 matrix. Uses timm positional-
+  embedding interpolation from 392 to 224.
+- **Native mode (conditionally deferred):** use RETFound-Green's native 392px input,
+  average-pool over patch tokens — matches the design described in the paper and gives the
+  most direct comparison against its published numbers.
 
-**Status:** EXTERNAL-LIT for all parameter/performance specifics. DEFERRED-PENDING-SUBDECISION
-for evaluation mode fork.
+**Subdecision resolved by B1 (2026-05-24):** matched-224/default_224 is the B2 primary
+protocol. Native-392/avg-pool is conditionally deferred and may be run as a secondary row
+only after matched-224 B2 is complete, if user explicitly decides.
+
+**Status:** ACTIVE — B1 RETFound-Green closeout 2026-05-24. Architecture, weights, and
+pretraining corpus B1-verified. Matched-224 subdecision resolved. ODIR caveat extended to
+"ODIR in any form." See B1 closeout report and Decision 029.
 
 ---
 
@@ -652,7 +676,7 @@ is the efficient primary backbone.
 | Entry | Tag | Reason |
 |-------|-----|--------|
 | F8 | GATE-SATISFIED (2026-05-24) | Bootstrap CIs complete — see A1 report outputs/analysis/A1_bootstrap_ci/20260523T204156Z/ |
-| F10 | EXTERNAL-LIT + DEFERRED-PENDING-SUBDECISION | RETFound weights/protocol; evaluation mode fork not decided |
+| F10 | ACTIVE (B1 verified 2026-05-24) | RETFound-Green: weights public (Apache-2.0), 384-dim ViT-S, matched-224 primary; pretraining includes AIROGS/DDR/ODIR (any form); see Decision 029 |
 | F12 | DEFERRED-PENDING-EXPERIMENT | Fine-tuning reference experiment not run |
 | F13 (protocol comparisons) | EXTERNAL-LIT | Nakayama and Aghabeigi protocol details from papers, not our artifacts |
 | F14 | EXTERNAL-LIT | Author names, HR AUROC values — must be confirmed against paper |

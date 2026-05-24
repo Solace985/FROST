@@ -1056,6 +1056,88 @@ docs/decisions.md
 
 ---
 
+## Decision 029 — RETFound-Green Pretraining-Overlap Policy and Matched-Protocol Selection
+
+Status: locked
+
+Decision:
+
+This decision records the RETFound-Green B1 verification outcome and locks four policies
+governing RETFound-Green's use in the project. It is recorded as part of Stage 8D-3.5 B1
+(RETFound-Green partial closeout, 2026-05-24). It does not authorise extraction, training,
+or evaluation.
+
+1. Pretraining corpus:
+
+   RETFound-Green (Engelmann & Bernabeu, Nature Comms 2025, arXiv 2405.00117) is
+   pretrained on ~75,000 publicly available retinal images from three sources:
+   - AIROGS (53,327 images)
+   - DDR (full dataset)
+   - ODIR-2019 (full dataset)
+
+   BRSET, mBRSET, IDRiD, Messidor/Messidor-2, APTOS/APTOS-2019, and RFMiD are not present
+   in the RETFound-Green pretraining corpus. RETFound-Green is not blocked for BRSET primary
+   matrix inclusion on contamination grounds.
+
+2. ODIR pretraining caveat and external-validation exclusion:
+
+   RETFound-Green pretraining includes ODIR-2019. This project uses ODIR-5K, which is the
+   same dataset family (same source, same ophthalmological disease labelling scheme,
+   overlapping image population). These are treated as equivalent for contamination purposes.
+
+   RETFound-Green MUST NOT be used as a frozen feature extractor for external validation on
+   ODIR in any form — ODIR-2019, ODIR-5K, or any ODIR-derived split — because doing so
+   would constitute pretraining/evaluation overlap and invalidate any generalisation claim.
+
+   If AIROGS-based evaluation is later adopted by the project, the same exclusion applies
+   (RETFound-Green pretraining includes AIROGS).
+
+   DDR is not currently a project evaluation dataset. Do not claim DDR is a project dataset
+   unless project documentation explicitly says so.
+
+3. B2 matched-224 protocol (subdecision resolved):
+
+   The Stage 8D-3 matrix uses 224px input with the standard default_224 preprocessing
+   pipeline. RETFound-Green B2 will use the same matched-224/default_224 protocol for
+   comparability with ResNet-50, ConvNeXt-Base, DINOv2-Base, and DINOv2-Large.
+
+   When loading 392×392-trained RETFound-Green weights at 224×224, timm automatically
+   interpolates positional embeddings. This is expected and correct behaviour for
+   cross-resolution inference, but it means B2 matched-224 results are not directly
+   comparable to the published native-392/avg-pool numbers.
+
+   Native-392/avg-pool protocol is conditionally deferred. It may be run as a secondary
+   protocol row only after matched-224 B2 is complete and only with explicit user decision.
+   Running native-392 by default is forbidden.
+
+4. retfound.yaml mismatch — B2 must create a new config:
+
+   The existing configs/backbone/retfound.yaml has embedding_dim=1024 and model_type=retfound.
+   This corresponds to a ViT-Large variant (original RETFound or RETFound-MEH) and must not
+   be reused or overwritten for RETFound-Green.
+
+   B2 must create a new config file, e.g. configs/backbone/retfound_green_matched224.yaml,
+   with embedding_dim=384, reflecting RETFound-Green's ViT-Small architecture.
+
+Consequences:
+
+- RETFound-Green is approved for B2 matched-224 BRSET matrix execution (B2: GO).
+- B2 must add timm as a project dependency (not currently installed).
+- B2 must implement a timm loader branch in src/retina_screen/embeddings.py.
+- B2 must create configs/backbone/retfound_green_matched224.yaml with embedding_dim=384.
+- RETFound-Green must not be externally validated on ODIR in any form.
+- RETFound-Green native-392/avg-pool is deferred and must not be run by default.
+- This decision does not affect DINOv3-Large, FLAIR, DINOv2-Giant, or RETFound-MEH.
+
+Files referenced:
+
+docs/verifications/B1_backbone_candidates_verification.md
+docs/paper_framing_and_findings.md (F10)
+configs/backbone/retfound.yaml (read-only reference; do not modify)
+src/retina_screen/embeddings.py (B2 will add timm loader branch)
+
+---
+
 # Open Decisions
 
 These decisions are not locked yet. Ask before implementing if they become relevant.
