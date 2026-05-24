@@ -1,0 +1,45 @@
+name: retfound_green
+model_type: retfound_green
+source: timm
+timm_model_name: vit_small_patch14_reg4_dinov2
+version: retfound_green_v0.1
+embedding_dim: 384
+input_size: 224
+patch_size: 14
+native_input_size: 392
+native_pooling: avg
+matrix_pooling: cls
+preprocessing: default_224
+frozen: true
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+
+# B2 primary protocol: matched-224/CLS-token representation (Decision 029).
+# Native-392/avg-pool is explicitly deferred (may be run later as a secondary row).
+native_392_deferred: true
+
+# timm positional-embedding interpolation:
+# Released weights were trained at 392x392; timm auto-interpolates positional embeddings
+# when the model is instantiated at img_size=(224,224). This is expected and documented
+# (Decision 029). The interpolation introduces a mild positional-encoding mismatch
+# vs the native protocol — intentional for strict cross-backbone comparability.
+timm_pe_interpolation_note: "392x392_trained_weights_loaded_at_224x224_timm_auto_interpolates"
+
+# Checkpoint configuration.
+# Download (Apache-2.0, no access gate):
+#   https://github.com/justinengelmann/RETFound_Green/releases/download/v0.1/retfoundgreen_statedict.pth
+# Set checkpoint_path to the absolute path of the downloaded file before B2 RUN extraction.
+# Alternatively, set environment variable: RETFOUND_GREEN_CHECKPOINT=/path/to/retfoundgreen_statedict.pth
+checkpoint_path: ""
+checkpoint_url: "https://github.com/justinengelmann/RETFound_Green/releases/download/v0.1/retfoundgreen_statedict.pth"
+checkpoint_license: "Apache-2.0"
+
+# External validation exclusions (Decision 029).
+# RETFound-Green was pretrained on AIROGS, DDR, ODIR-2019.
+# It must NOT be used for external validation on these datasets if used by the project.
+external_validation_exclusions:
+  - "ODIR-2019"
+  - "ODIR-5K"
+  - "ODIR-derivatives"
+  - "AIROGS"
+  - "DDR-if-used-by-project"
