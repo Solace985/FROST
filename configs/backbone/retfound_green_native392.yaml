@@ -1,0 +1,40 @@
+name: retfound_green_native392
+model_type: retfound_green
+source: timm
+timm_model_name: vit_small_patch14_reg4_dinov2
+version: retfound_green_v0.1_native392
+embedding_dim: 384
+input_size: 392
+patch_size: 14
+native_input_size: 392
+global_pool: avg
+protocol: native_392_avg_pool
+frozen: true
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+
+# Native-392 comparator protocol (NOT the main matched-protocol matrix row).
+# Purpose: determine whether RETFound-Green matched-224 underperformance vs DINOv2-Base
+# was caused by protocol mismatch, not backbone quality.
+# RETFound-Green native resolution: 392×392, avg-pool over patch tokens.
+# Original checkpoint: models/retfoundgreen_statedict.pth (pos_embed=[1,784,384] = 28×28 patches).
+# No PE interpolation required: 392/14 = 28, so 28×28=784 patches exactly match the checkpoint.
+native_comparator: true
+main_matrix_replacement: false
+
+# Checkpoint: original uninterpolated weights (NOT retfoundgreen_statedict_224.pth).
+# pos_embed=[1,784,384] in checkpoint matches model pos_embed at input_size=392.
+# timm strict-load works because patch grid sizes match exactly.
+checkpoint_path: ""
+checkpoint_env_var: RETFOUND_GREEN_CHECKPOINT
+checkpoint_url: "https://github.com/justinengelmann/RETFound_Green/releases/download/v0.1/retfoundgreen_statedict.pth"
+checkpoint_license: "Apache-2.0"
+checkpoint_sha256_original: "431DE5DBC1BEBBB32F60E2C0BCF8DAA4F8BCBF06F7CB1E1DC97EC589713942E1"
+
+# External validation exclusions (Decision 029).
+external_validation_exclusions:
+  - "ODIR-2019"
+  - "ODIR-5K"
+  - "ODIR-derivatives"
+  - "AIROGS"
+  - "DDR-if-used-by-project"

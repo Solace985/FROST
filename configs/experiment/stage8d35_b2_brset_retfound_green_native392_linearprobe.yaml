@@ -1,0 +1,22 @@
+run_mode: stage8d35_b2_brset_retfound_green_native392_linearprobe
+stage: "8D-3.5-B2-native392-comparator"
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+head_type: linear_probe
+backbone: retfound_green_native392
+preprocessing: retfound_green_native392
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+dataset: brset
+seed: 42
+embedding_dim: 384
+# class_weighting_enabled inherits false from configs/training/standard.yaml (Decision 027)
+# Reuses RETFound-Green native-392 BRSET cache from multitask run — no re-extraction needed.
+fast_dev_run: false
+final_test_result: false
+# Protocol: native-392/avg-pool RETFound-Green comparator (NOT the main matched-protocol matrix row).
+# Dataset: BRSET only. No ODIR, AIROGS, DDR, mBRSET, or any non-BRSET dataset (Decision 029).
+# Checkpoint: original retfoundgreen_statedict.pth (NOT interpolated _224 checkpoint).

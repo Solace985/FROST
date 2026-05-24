@@ -1,0 +1,15 @@
+image_size: 392
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+use_clahe: false
+use_graham: false
+interpolation: bilinear
+random_hflip_p: 0.0
+random_rotation_deg: 0.0
+color_jitter: false
+
+# Native-392 preprocessing for RETFound-Green comparator.
+# image_size=392 produces a different preprocessing_hash than default_224 (image_size=224),
+# ensuring the native cache namespace is distinct from the matched-224 cache namespace.
+# Normalization stats match default_224 (ImageNet) for consistency.
+# No augmentation (extract mode); no CLAHE/Graham preprocessing.

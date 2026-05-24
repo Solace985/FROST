@@ -108,6 +108,8 @@ def _build_backbone_config(cfg: dict) -> tuple[BackboneConfig, dict]:
         model_type=backbone_raw["model_type"],
         version=backbone_raw.get("version", ""),
         checkpoint_path=backbone_raw.get("checkpoint_path", ""),
+        input_size=int(backbone_raw.get("input_size", 224)),
+        global_pool=str(backbone_raw.get("global_pool", "token")),
     )
     return config, backbone_raw
 
