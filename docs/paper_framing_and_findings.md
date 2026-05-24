@@ -407,8 +407,13 @@ Multiple entries (F2, F3, F5, F6) carry explicit provisional flags pending this 
    in a single family.
 4. Pre-registration of the exact comparison set before running bootstrap (Decision 013 obligation).
 
-**Status:** DEFERRED-PENDING-EXPERIMENT.
-F2, F3, F5, F6 orderings are PROVISIONAL until F8 is satisfied.
+**Status:** GATE-SATISFIED — 2026-05-24.
+Bootstrap CIs computed (Stage 8D-3.5 A1, 2000 resamples, patient-level, seed=42).
+Report: `outputs/analysis/A1_bootstrap_ci/20260523T204156Z/a1_bootstrap_ci_report.md`
+All 4 execution gates passed (M, P, C, D). 102 supported orderings, 106 not-supported.
+DeLong not implemented; paired percentile bootstrap is the uniform A1 delta method.
+F2/F3/F5/F6 ordering claims remain provisional until manuscript-stage review of §11
+(not-supported orderings); softening recommendations are in §11 of the A1 report.
 
 ---
 
@@ -646,7 +651,7 @@ is the efficient primary backbone.
 
 | Entry | Tag | Reason |
 |-------|-----|--------|
-| F8 | DEFERRED-PENDING-EXPERIMENT | Bootstrap CIs not yet run |
+| F8 | GATE-SATISFIED (2026-05-24) | Bootstrap CIs complete — see A1 report outputs/analysis/A1_bootstrap_ci/20260523T204156Z/ |
 | F10 | EXTERNAL-LIT + DEFERRED-PENDING-SUBDECISION | RETFound weights/protocol; evaluation mode fork not decided |
 | F12 | DEFERRED-PENDING-EXPERIMENT | Fine-tuning reference experiment not run |
 | F13 (protocol comparisons) | EXTERNAL-LIT | Nakayama and Aghabeigi protocol details from papers, not our artifacts |
