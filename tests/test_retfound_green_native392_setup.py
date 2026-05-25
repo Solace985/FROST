@@ -326,9 +326,16 @@ def test_matched224_config_unchanged() -> None:
 
 
 def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
-    """Verify load_backbone calls timm.create_model with native-392 args when config sets them."""
+    """Verify load_backbone calls timm.create_model with native-392 args when config sets them.
+
+    For global_pool='avg' (native-392), the loader:
+      1. Calls torch.load() to get the state dict.
+      2. Remaps norm.weight/bias -> fc_norm.weight/bias (timm avg-pool key rename).
+      3. Calls timm.create_model WITHOUT checkpoint_path.
+      4. Calls model.load_state_dict() with the remapped state dict.
+    """
     fake_ckpt = tmp_path / "retfoundgreen_statedict.pth"
-    fake_ckpt.write_bytes(b"fake")
+    fake_ckpt.write_bytes(b"fake")  # path must exist; torch.load is mocked below
 
     cfg = BackboneConfig(
         name="retfound_green_native392",
@@ -347,12 +354,21 @@ def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
     mock_model.return_value = torch.zeros(1, 384)
     mock_model.to.return_value = mock_model
     mock_model.training = False
+    mock_model.load_state_dict.return_value = ([], [])  # success (no missing/unexpected keys)
+
+    # Fake state dict with norm.weight/bias — these must be remapped to fc_norm.*
+    fake_state = {
+        "norm.weight": torch.zeros(384),
+        "norm.bias": torch.zeros(384),
+        "pos_embed": torch.zeros(1, 784, 384),
+    }
 
     with (
         patch("timm.create_model", return_value=mock_model) as mock_create,
         patch("timm.list_models", return_value=["vit_small_patch14_reg4_dinov2"]),
         patch("retina_screen.embeddings._freeze_backbone"),
         patch("retina_screen.embeddings._verify_embedding_dim"),
+        patch("torch.load", return_value=fake_state),  # mock state-dict load for avg-pool path
     ):
         result = load_backbone(cfg, torch.device("cpu"))
 
@@ -372,9 +388,26 @@ def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
     assert call_kwargs[1].get("num_classes") == 0, (
         f"timm.create_model must be called with num_classes=0; got {call_kwargs}"
     )
-    # Must use original checkpoint path
-    assert call_kwargs[1].get("checkpoint_path") == str(fake_ckpt), (
-        f"timm.create_model must be called with correct checkpoint_path; got {call_kwargs}"
+    # For avg-pool path: checkpoint_path must NOT be passed to timm.create_model
+    # (state dict is loaded manually and injected via load_state_dict)
+    assert "checkpoint_path" not in call_kwargs[1], (
+        f"For avg-pool native protocol, timm.create_model must NOT receive checkpoint_path; "
+        f"checkpoint is loaded manually and injected via load_state_dict. got {call_kwargs}"
+    )
+    # Verify load_state_dict was called with fc_norm remapping
+    mock_model.load_state_dict.assert_called_once()
+    state_passed = mock_model.load_state_dict.call_args[0][0]
+    assert "fc_norm.weight" in state_passed, (
+        "load_state_dict must receive fc_norm.weight (remapped from norm.weight for avg-pool)"
+    )
+    assert "fc_norm.bias" in state_passed, (
+        "load_state_dict must receive fc_norm.bias (remapped from norm.bias for avg-pool)"
+    )
+    assert "norm.weight" not in state_passed, (
+        "norm.weight must be remapped to fc_norm.weight before load_state_dict"
+    )
+    assert "norm.bias" not in state_passed, (
+        "norm.bias must be remapped to fc_norm.bias before load_state_dict"
     )
 
 

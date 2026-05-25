@@ -351,13 +351,33 @@ def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Mod
     _input_size = config.input_size   # 224 for matched-224, 392 for native
     _gpool = config.global_pool       # 'token' for CLS, 'avg' for native avg-pool
     try:
-        model = timm.create_model(
-            _TIMM_MODEL_NAME,
-            img_size=(_input_size, _input_size),
-            num_classes=0,           # Return global pool output (no classifier head)
-            global_pool=_gpool,
-            checkpoint_path=checkpoint_path,
-        )
+        if _gpool == "avg":
+            # Native-392 avg-pool path: timm names the final LayerNorm 'fc_norm' when
+            # global_pool='avg', but the checkpoint uses 'norm' (CLS-token naming).
+            # Remap in-memory before load_state_dict.  No checkpoint file is modified.
+            # This is a 1:1 layer rename — 'norm' and 'fc_norm' are the same LayerNorm,
+            # just accessed via a different attribute name depending on pooling mode.
+            _state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+            for _k in ("norm.weight", "norm.bias"):
+                if _k in _state:
+                    _state[_k.replace("norm.", "fc_norm.", 1)] = _state.pop(_k)
+            model = timm.create_model(
+                _TIMM_MODEL_NAME,
+                img_size=(_input_size, _input_size),
+                num_classes=0,
+                global_pool=_gpool,
+            )
+            model.load_state_dict(_state, strict=True)
+        else:
+            # Matched-224 CLS-token path: checkpoint key names match the 'token' pool
+            # model exactly — timm checkpoint_path strict-load works directly.
+            model = timm.create_model(
+                _TIMM_MODEL_NAME,
+                img_size=(_input_size, _input_size),
+                num_classes=0,
+                global_pool=_gpool,
+                checkpoint_path=checkpoint_path,
+            )
     except Exception as exc:
         raise BackboneUnavailableError(
             f"Failed to load RETFound-Green via timm ({_TIMM_MODEL_NAME!r}): {exc}. "
