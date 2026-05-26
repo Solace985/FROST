@@ -31,11 +31,13 @@ overwrite=False contract
 
 overwrite=True: always re-extract regardless of existing state.
 
-Real backbone support (Stage 8A / 8D-3.5-B2)
----------------------------------------------
-Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green'.
+Real backbone support (Stage 8A / 8D-3.5-B2 / 8D-3.5-B3)
+-----------------------------------------------------------
+Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green',
+'dinov3'.
 Original RETFound/RETFound-MEH remains deferred/access-pending and is not part of B2.
 RETFound-Green uses timm (vit_small_patch14_reg4_dinov2, 384-dim, matched-224, Decision 029).
+DINOv3-Large uses timm (vit_large_patch16_dinov3_qkvb, 1024-dim, native-224/CLS-token).
 Unknown model_type raises BackboneUnavailableError — never falls back silently to mock.
 """
 
@@ -399,6 +401,110 @@ def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Mod
     return model
 
 
+def _load_dinov3_large(config: BackboneConfig, device: torch.device) -> nn.Module:
+    """Load DINOv3-Large (ViT-L/16-dinov3-qkvb) via timm.
+
+    Architecture: vit_large_patch16_dinov3_qkvb, embedding_dim=1024.
+    Protocol: native-224/CLS-token (global_pool='token', img_size=224).
+    Pretraining: LVD-1689M (Meta, natural images). License: Meta DINOv3 License.
+
+    Checkpoint
+    ----------
+    Set BackboneConfig.checkpoint_path (from backbone YAML 'checkpoint_path' field) or
+    the environment variable RETINA_SCREEN_DINOV3_VITL16_WEIGHTS.
+    Both empty → BackboneUnavailableError (no silent fallback).
+
+    Loading
+    -------
+    timm's checkpoint_filter_fn (eva.py) handles all key translations:
+    - storage_tokens → reg_token
+    - ls1.gamma / ls2.gamma → gamma_1 / gamma_2
+    - qkv.bias → q_bias + v_bias (k_bias fixed at 0)
+    - rope_embed.*, qkv.bias_mask, mask_token discarded
+    The filter_fn is invoked explicitly via timm.models._helpers.load_checkpoint
+    (NOT via checkpoint_path= in create_model, which bypasses the filter).
+    use_fc_norm=False is the factory default; norm.* keys always match.
+
+    Raises
+    ------
+    BackboneUnavailableError
+        timm not installed; checkpoint path empty; checkpoint file absent;
+        timm model creation or checkpoint loading fails; output dim mismatch.
+    """
+    try:
+        import timm  # noqa: PLC0415
+        from timm.models._helpers import load_checkpoint as _timm_load_checkpoint  # noqa: PLC0415
+        from timm.models.eva import checkpoint_filter_fn as _dinov3_filter_fn  # noqa: PLC0415
+    except ImportError as exc:
+        raise BackboneUnavailableError(
+            "timm is required for DINOv3-Large. "
+            "Install with: pip install 'timm>=1.0'."
+        ) from exc
+
+    _TIMM_MODEL_NAME = "vit_large_patch16_dinov3_qkvb"
+
+    # Verify the model is available in the installed timm version.
+    available = [m for m in timm.list_models() if _TIMM_MODEL_NAME in m]
+    if not available:
+        raise BackboneUnavailableError(
+            f"timm {timm.__version__} does not list {_TIMM_MODEL_NAME!r}. "
+            f"Upgrade timm: pip install 'timm>=1.0.27'."
+        )
+
+    # Resolve checkpoint path: YAML field takes precedence, then env var.
+    checkpoint_path = config.checkpoint_path or os.environ.get(
+        "RETINA_SCREEN_DINOV3_VITL16_WEIGHTS", ""
+    )
+    if not checkpoint_path:
+        raise BackboneUnavailableError(
+            "DINOv3-Large requires a checkpoint. Set 'checkpoint_path' in "
+            "configs/backbone/dinov3_large.yaml or set the environment variable "
+            "RETINA_SCREEN_DINOV3_VITL16_WEIGHTS=/path/to/"
+            "dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth. "
+            "Weights are under the Meta DINOv3 License; confirm research-use "
+            "compliance before use."
+        )
+    if not Path(checkpoint_path).exists():
+        raise BackboneUnavailableError(
+            f"DINOv3-Large checkpoint not found at {checkpoint_path!r}. "
+            "Verify the path to dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth."
+        )
+
+    _input_size = config.input_size   # 224 for native-224 protocol
+    _gpool = config.global_pool       # 'token' for CLS-token
+
+    try:
+        # Step 1: Create model architecture (no checkpoint yet).
+        # Do NOT pass checkpoint_path= here — that bypasses checkpoint_filter_fn.
+        model = timm.create_model(
+            _TIMM_MODEL_NAME,
+            img_size=(_input_size, _input_size),
+            num_classes=0,
+            global_pool=_gpool,
+        )
+        # Step 2: Load checkpoint with the EVA filter_fn applied explicitly.
+        # eva.checkpoint_filter_fn detects DINOv3 via 'storage_tokens' in state_dict
+        # and performs all key remaps (storage_tokens→reg_token, ls*.gamma→gamma_*,
+        # qkv.bias split, rope_embed/bias_mask/mask_token discard).
+        _timm_load_checkpoint(model, str(checkpoint_path), filter_fn=_dinov3_filter_fn)
+    except Exception as exc:
+        raise BackboneUnavailableError(
+            f"Failed to load DINOv3-Large via timm ({_TIMM_MODEL_NAME!r}): {exc}. "
+            f"Verify checkpoint integrity and timm compatibility "
+            f"(installed: {timm.__version__})."
+        ) from exc
+
+    _freeze_backbone(model)
+    model.to(device)
+    _verify_embedding_dim(model, config, device)
+    logger.info(
+        "Loaded DINOv3-Large backbone %s (embedding_dim=%d, input_size=%d, "
+        "global_pool=%s, frozen=True, device=%s)",
+        _TIMM_MODEL_NAME, config.embedding_dim, _input_size, _gpool, device,
+    )
+    return model
+
+
 # ---------------------------------------------------------------------------
 # Backbone loading
 # ---------------------------------------------------------------------------
@@ -408,7 +514,7 @@ def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
     """Return a ready frozen backbone on the given device.
 
     Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2',
-    'retfound_green'.
+    'retfound_green', 'dinov3'.
 
     Raises
     ------
@@ -440,10 +546,13 @@ def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
     if config.model_type == "retfound_green":
         return _load_retfound_green(config, device)
 
+    if config.model_type == "dinov3":
+        return _load_dinov3_large(config, device)
+
     raise BackboneUnavailableError(
         f"Unknown or unsupported backbone model_type={config.model_type!r} "
         f"for backbone name={config.name!r}. "
-        f"Supported types: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green'. "
+        f"Supported types: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green', 'dinov3'. "
         f"Do not add a mock fallback here — unknown backbones must fail loudly."
     )
 

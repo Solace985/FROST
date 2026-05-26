@@ -1,0 +1,33 @@
+name: dinov3_large
+model_type: dinov3
+source: timm
+timm_model_name: vit_large_patch16_dinov3_qkvb
+version: lvd1689m
+embedding_dim: 1024
+input_size: 224
+patch_size: 16
+num_register_tokens: 4
+expected_tokens_at_224: 201
+global_pool: token
+use_fc_norm: false
+positional_encoding: rope
+preprocessing: default_224
+frozen: true
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+
+# Checkpoint configuration.
+# Do NOT hardcode the absolute local path here.
+# Set environment variable: RETINA_SCREEN_DINOV3_VITL16_WEIGHTS=/path/to/weights
+# Or set checkpoint_path: to the local absolute path (not committed).
+checkpoint_path: ""
+checkpoint_env_var: RETINA_SCREEN_DINOV3_VITL16_WEIGHTS
+checkpoint_filename: dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+checkpoint_sha256_prefix: "8AA4CBDD"
+license: "Meta DINOv3 License (not Apache-2.0)"
+license_note: "Confirm research-use compliance before extraction."
+
+# LVD-1689M pretraining: natural images only, no retinal contamination.
+# No external validation exclusions required (contrast with RETFound-Green Decision 029).
+pretraining_dataset: LVD-1689M
+contamination_check: clean_natural_images_only

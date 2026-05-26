@@ -1,0 +1,24 @@
+run_mode: stage8d35_b3_brset_dinov3_large_linearprobe
+stage: "8D-3.5-B3"
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+head_type: linear_probe
+backbone: dinov3_large
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+dataset: brset
+seed: 42
+embedding_dim: 1024
+# class_weighting_enabled inherits false from configs/training/standard.yaml (Decision 027)
+# Reuses DINOv3-Large BRSET cache from multitask run — no re-extraction needed.
+fast_dev_run: false
+final_test_result: false
+# Protocol: native-224/CLS-token DINOv3-Large (matched-224-equivalent default_224 protocol).
+# Dataset: BRSET only. No mBRSET, ODIR, AIROGS, DDR, IDRiD, Messidor, APTOS, RFMiD, EyePACS.
+# Backbone: DINOv3-Large (ViT-L/16), LVD-1689M pretraining, Meta DINOv3 License.
+# Cache namespace: cache/embeddings/dinov3_large/brset/92d0f40b94aea26c/ (same as MT)
+# No A1 bootstrap CI in this prompt.
