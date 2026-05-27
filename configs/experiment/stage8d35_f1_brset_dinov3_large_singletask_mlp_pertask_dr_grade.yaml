@@ -1,0 +1,25 @@
+run_mode: stage8d35_f1_brset_dinov3_large_singletask_mlp_pertask_dr_grade
+stage: "8D-3.5-F1"
+ablation_name: singletask_mlp_pertask
+preliminary: true
+rehearsal: false
+full_dataset_run: true
+internal_full_result: true
+reported_backbone_is_smoke: false
+head_type: singletask_mlp_pertask
+backbone: dinov3_large
+selected_task: dr_grade
+dataset: brset
+preprocessing: default_224
+dataset_config: configs/dataset/brset.yaml
+task_config: configs/tasks/brset_default.yaml
+embedding_dim: 1024
+seed: 42
+class_weighting_enabled: false
+fast_dev_run: false
+final_test_result: false
+# F1 early ablation: negative-transfer test (multi-task vs single-task).
+# No CORAL/CORN/ordinal regression/GradNorm/focal loss/class weighting/threshold tuning.
+# No A1 bootstrap CI. No external validation. No backbone fine-tuning.
+# Reuses existing dinov3_large BRSET cache at preprocessing_hash=92d0f40b94aea26c.
+# Do NOT run scripts/03_extract_embeddings.py for this config.

@@ -1,0 +1,14 @@
+head_type: singletask_mlp_pertask
+description: >
+  F1 Variant B: per-task MLP head (single selected task).
+  Architecture: identical to locked MultiTaskHead — 2-layer trunk
+  (Linear->LayerNorm->GELU->Dropout repeated twice, hidden_dim=128, dropout=0.2),
+  followed by per-task head (Linear(128,64)->GELU->Dropout->Linear(64,output_size)).
+  Each task gets fresh trunk + fresh task head from scratch (no sharing across tasks).
+  Binary tasks: scalar logit (B,) with BCEWithLogits (same as locked convention).
+  dr_grade: (B, 5) logits with CrossEntropy (same as locked ORDINAL convention).
+  Kendall log-sigma: degenerates to one parameter for the single selected task.
+  Trained on exactly one task specified by selected_task in the experiment config.
+  Alias in build_head(): routes to MultiTaskHead.
+  Decision 027 recipe unchanged. class_weighting_enabled=false.
+  Purpose: F1 negative-transfer isolation (multi-task vs single-task ablation).

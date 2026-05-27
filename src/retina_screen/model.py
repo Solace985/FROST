@@ -250,7 +250,13 @@ class LinearProbeHead(nn.Module):
 # Head factory
 # ---------------------------------------------------------------------------
 
-_VALID_HEAD_TYPES: tuple[str, ...] = ("multitask", "multitask_default", "linear_probe")
+_VALID_HEAD_TYPES: tuple[str, ...] = (
+    "multitask",
+    "multitask_default",
+    "linear_probe",
+    "singletask_linearprobe_pertask",  # F1 Variant A: single-task linear probe alias
+    "singletask_mlp_pertask",          # F1 Variant B: single-task MLP alias
+)
 
 
 def build_head(
@@ -283,11 +289,11 @@ def build_head(
         to LinearProbeHead.
     """
     ht = str(head_type).lower().strip()
-    if ht in ("multitask", "multitask_default"):
+    if ht in ("multitask", "multitask_default", "singletask_mlp_pertask"):
         return MultiTaskHead(
             embedding_dim=embedding_dim, task_names=task_names, **kwargs
         )
-    if ht == "linear_probe":
+    if ht in ("linear_probe", "singletask_linearprobe_pertask"):
         if kwargs:
             raise ValueError(
                 f"LinearProbeHead does not accept extra constructor arguments. "
@@ -298,8 +304,9 @@ def build_head(
     raise ValueError(
         f"Unknown head_type={head_type!r}. "
         f"Valid values: {_VALID_HEAD_TYPES}. "
-        f"Add 'head_type: multitask' or 'head_type: linear_probe' to the experiment config, "
-        f"or omit head_type to default to multitask."
+        f"Standard runs: 'head_type: multitask' or 'head_type: linear_probe'. "
+        f"F1 ablation: 'head_type: singletask_mlp_pertask' or 'head_type: singletask_linearprobe_pertask'. "
+        f"Omit head_type to default to multitask."
     )
 
 

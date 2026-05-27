@@ -340,6 +340,20 @@ def main() -> None:
         val_masks_np = val_batch.masks       # dict of numpy arrays
         logger.info("Val embeddings loaded: shape=%s", list(val_emb.shape))
 
+    # --- F1 single-task restriction: filter to one task if selected_task is set ---
+    # Additive only; when selected_task is absent, behaviour is unchanged (all tasks used).
+    _selected_task = cfg.get("selected_task")
+    if _selected_task is not None:
+        if _selected_task not in supported_tasks:
+            logger.error(
+                "selected_task=%r not in adapter supported_tasks=%s. "
+                "F1 single-task training requires a valid task name.",
+                _selected_task, supported_tasks,
+            )
+            sys.exit(1)
+        supported_tasks = [_selected_task]
+        logger.info("F1 single-task mode: restricting training to selected_task=%r", _selected_task)
+
     # --- Mandatory FeaturePolicy gate (train samples) ---
     feature_policy = FeaturePolicy()
     mode = cfg.get("mode", "image_only")

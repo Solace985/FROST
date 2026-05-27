@@ -1,0 +1,11 @@
+head_type: singletask_linearprobe_pertask
+description: >
+  F1 Variant A: per-task linear probe (single selected task).
+  Architecture: identical to locked LinearProbeHead — one nn.Linear per task,
+  no hidden layers, no dropout, no metadata branch, no trunk.
+  Binary tasks: scalar logit (B,) with BCEWithLogits (same as locked convention).
+  dr_grade: (B, 5) logits with CrossEntropy (same as locked ORDINAL convention).
+  Trained on exactly one task specified by selected_task in the experiment config.
+  Alias in build_head(): routes to LinearProbeHead.
+  Decision 027 recipe unchanged. class_weighting_enabled=false.
+  Purpose: F1 negative-transfer isolation (multi-task vs single-task ablation).

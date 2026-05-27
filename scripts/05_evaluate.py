@@ -574,6 +574,20 @@ def main() -> None:
     sample_lookup = {s.sample_id: s for s in manifest_samples}
     supported_tasks = adapter.get_supported_tasks()
 
+    # --- F1 single-task restriction: filter to one task if selected_task is set ---
+    # Additive only; when selected_task is absent, behaviour is unchanged (all tasks used).
+    _selected_task = cfg.get("selected_task")
+    if _selected_task is not None:
+        if _selected_task not in supported_tasks:
+            logger.error(
+                "selected_task=%r not in adapter supported_tasks=%s. "
+                "Cannot evaluate F1 single-task model with this task.",
+                _selected_task, supported_tasks,
+            )
+            sys.exit(1)
+        supported_tasks = [_selected_task]
+        logger.info("F1 single-task eval: restricting to selected_task=%r", _selected_task)
+
     # --- Select evaluation split (test → val → train, with explicit labelling) ---
     eval_split_name: str
     eval_reason: str
