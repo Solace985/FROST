@@ -1,0 +1,29 @@
+{
+  "_comment_1": "FROST example operating-point schema (COMMITTED, documentation only).",
+  "_comment_2": "The REAL artifact is generated to deploy/referable_dr_demo/.local/operating_point.local.json by analysis/derive_threshold.py and is NEVER committed.",
+  "_comment_3": "Values below are illustrative placeholders, NOT the deployed threshold. The threshold is derived from the BRSET VALIDATION split only.",
+
+  "threshold": 0.5,
+  "derivation_split": "validation",
+  "target_sensitivity": 0.95,
+
+  "validation_sensitivity": 0.95,
+  "validation_specificity": 0.0,
+  "validation_positive_count": 0,
+  "validation_negative_count": 0,
+
+  "heldout_test_sensitivity": 0.0,
+  "heldout_test_specificity": 0.0,
+  "test_positive_count": 0,
+  "test_negative_count": 0,
+
+  "backbone_checkpoint_sha256": "<sha256 of backbone checkpoint, recorded in .local artifact>",
+  "head_checkpoint_sha256": "<sha256 of head checkpoint, recorded in .local artifact>",
+  "preprocessing_hash": "<preprocessing config hash>",
+  "task_ordering_hash": "<sha256 of canonical task ordering>",
+  "native_protocol": "native_392_avg_pool",
+
+  "threshold_selection_algorithm": "largest threshold T such that validation sensitivity(score>=T) >= 0.95; ties broken toward the largest qualifying score boundary to maximize specificity subject to the sensitivity floor",
+  "timestamp": "<ISO-8601 UTC>",
+  "git_commit": "<git commit hash at derivation time>"
+}

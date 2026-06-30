@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 120" role="img"
+     aria-label="FROST pipeline: image, native-392 preprocessing, frozen RETFound-Green backbone, 384-d embedding, locked MultiTaskHead, referable mass, validation threshold, decision">
+  <style>
+    .box { fill:#fbfcfd; stroke:#dfe4e8; }
+    .frozen { stroke:#1f5066; stroke-width:1.6; }
+    .t { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size:11px; fill:#1b2227; }
+    .s { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size:9px; fill:#79858d; }
+    .accent { fill:#1f5066; }
+    .arrow { stroke:#9aa6ad; stroke-width:1.3; fill:none; }
+  </style>
+
+  <!-- stages -->
+  <g>
+    <rect class="box" x="8"   y="36" width="96" height="48" rx="6"/>
+    <text class="t" x="56" y="58" text-anchor="middle">Image</text>
+    <text class="s" x="56" y="72" text-anchor="middle">JPEG / PNG</text>
+
+    <rect class="box" x="124" y="36" width="104" height="48" rx="6"/>
+    <text class="t" x="176" y="58" text-anchor="middle">Preprocess</text>
+    <text class="s" x="176" y="72" text-anchor="middle">native 392×392</text>
+
+    <rect class="box frozen" x="248" y="30" width="128" height="60" rx="6"/>
+    <text class="t accent" x="312" y="52" text-anchor="middle">RETFound-Green</text>
+    <text class="s" x="312" y="66" text-anchor="middle">frozen · ~22M · avg-pool</text>
+    <text class="s" x="312" y="79" text-anchor="middle">no gradient updates</text>
+
+    <rect class="box" x="396" y="36" width="92" height="48" rx="6"/>
+    <text class="t" x="442" y="58" text-anchor="middle">Embedding</text>
+    <text class="s" x="442" y="72" text-anchor="middle">[384]</text>
+
+    <rect class="box" x="508" y="36" width="104" height="48" rx="6"/>
+    <text class="t" x="560" y="58" text-anchor="middle">MultiTaskHead</text>
+    <text class="s" x="560" y="72" text-anchor="middle">dr_grade [5]</text>
+
+    <rect class="box" x="632" y="36" width="104" height="48" rx="6"/>
+    <text class="t" x="684" y="55" text-anchor="middle">Referable mass</text>
+    <text class="s" x="684" y="69" text-anchor="middle">p2 + p3 + p4</text>
+
+    <rect class="box" x="756" y="36" width="96" height="48" rx="6"/>
+    <text class="t" x="804" y="55" text-anchor="middle">Threshold</text>
+    <text class="s" x="804" y="69" text-anchor="middle">validation-set</text>
+
+    <rect class="box" x="872" y="36" width="80" height="48" rx="6"/>
+    <text class="t accent" x="912" y="55" text-anchor="middle">Triage</text>
+    <text class="s" x="912" y="69" text-anchor="middle">REF / NOT</text>
+  </g>
+
+  <!-- arrows -->
+  <g class="arrow">
+    <path d="M104 60 L122 60"/>
+    <path d="M228 60 L246 60"/>
+    <path d="M376 60 L394 60"/>
+    <path d="M488 60 L506 60"/>
+    <path d="M612 60 L630 60"/>
+    <path d="M736 60 L754 60"/>
+    <path d="M852 60 L870 60"/>
+  </g>
+</svg>

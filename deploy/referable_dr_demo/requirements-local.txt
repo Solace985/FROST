@@ -1,0 +1,16 @@
+# FROST — local demonstrator requirements (app-local only).
+#
+# These pin ONLY the web-serving dependencies for the local demonstrator.
+# torch, timm, pillow, numpy, and pyyaml are intentionally NOT listed here:
+# they are provided by the existing pipeline environment and MUST NOT be
+# upgraded/downgraded by this demonstrator (parity depends on the exact
+# torch 2.12.0+cpu / timm 1.0.27 already installed).
+#
+# Launch / test with an overlay on the project environment, e.g.:
+#   uv run --with-requirements deploy/referable_dr_demo/requirements-local.txt \
+#     uvicorn deploy.referable_dr_demo.backend.app:app --host 127.0.0.1 --port 8000
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+httpx==0.28.1

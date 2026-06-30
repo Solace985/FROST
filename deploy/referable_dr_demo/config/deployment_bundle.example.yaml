@@ -1,0 +1,49 @@
+# FROST — Frozen Representation for Ocular Screening and Triage
+# Example deployment-bundle template (COMMITTED).
+#
+# This is a documentation template only. The REAL bundle is generated locally to
+#   deploy/referable_dr_demo/.local/deployment_bundle.local.json
+# by analysis/build_local_deployment_bundle.py and is NEVER committed.
+#
+# All private local paths are resolved at build time from environment variables.
+# Do NOT hardcode private Windows paths in this committed file.
+
+bundle_version: "frost-referable-dr-1"
+
+# Selected deployment candidate (do not substitute):
+backbone_identifier: retfound_green_native392
+model_family: retfound_green
+native_protocol: native_392_avg_pool
+native_input_size: 392          # exact
+native_pooling: average         # avg-pool over patch tokens
+expected_embedding_dim: 384     # exact
+head_type: MultiTaskHead
+
+# Local private paths are resolved from these environment variables at build time.
+# The generated .local bundle records the resolved absolute paths + SHA-256 hashes;
+# this committed template records ONLY the variable names.
+env:
+  backbone_checkpoint: RETINA_SCREEN_RETF_GREEN_CHECKPOINT
+  head_checkpoint: RETINA_SCREEN_RETF_NATIVE392_MT_CHECKPOINT
+  bundle_path: RETINA_SCREEN_DEMO_BUNDLE_PATH
+  threshold_path: RETINA_SCREEN_DEMO_THRESHOLD_PATH
+  parity_cases_path: RETINA_SCREEN_DEMO_PARITY_CASES_PATH
+
+# Multi-task head task ordering (canonical; dr_grade first). The generated bundle
+# records the task-ordering hash used to invalidate the operating point on change.
+model_task_order:
+  - dr_grade
+  - macular_edema
+  - hypertensive_retinopathy
+  - amd
+  - drusen
+  - other_ocular
+  - diabetes
+dr_grade_task_key: dr_grade
+dr_grade_output_shape: 5
+
+# Referable-DR score is the post-hoc grade>=2 probability mass:
+#   softmax(dr_grade_logits)[2] + softmax(dr_grade_logits)[3] + softmax(dr_grade_logits)[4]
+referable_score_formula: "softmax(dr_grade_logits)[2:5].sum()"
+
+network_access_required: false

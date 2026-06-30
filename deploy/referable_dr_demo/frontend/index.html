@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>FROST — Referable Diabetic Retinopathy Research Demonstrator</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <div class="brand-mark">FROST</div>
+      <div class="brand-text">
+        <p class="tagline">Frozen Representation for Ocular Screening and Triage</p>
+        <h1 class="subtitle">Referable Diabetic Retinopathy Research Demonstrator</h1>
+        <p class="descriptor">
+          Frozen RETFound-Green native-392 representation with a locked
+          multi-task prediction head.
+        </p>
+      </div>
+      <div class="status-chip" id="health-chip" data-state="checking">
+        <span class="dot"></span><span id="health-text">Checking status…</span>
+      </div>
+    </div>
+
+    <!-- F.1 — the FIRST of exactly two designed not-a-medical-device statements -->
+    <div class="header-notice" role="note">
+      This local research demonstrator reproduces a study pipeline validated only
+      on BRSET&rsquo;s internal distribution. It is not a medical device, is not
+      validated for clinical decisions, and requires independent clinical
+      assessment.
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- F.2 Upload panel -->
+    <section class="card upload-panel" aria-labelledby="upload-h">
+      <h2 id="upload-h">1 · Upload a fundus image</h2>
+      <div id="dropzone" class="dropzone" tabindex="0">
+        <input type="file" id="file-input" accept="image/jpeg,image/png" hidden />
+        <p class="dz-primary">Drag a JPEG or PNG here, or <button type="button" id="browse-btn" class="link-btn">browse</button>.</p>
+        <p class="dz-secondary">Processed in memory only. The image is never stored.</p>
+      </div>
+
+      <div id="preview-wrap" class="preview-wrap" hidden>
+        <img id="preview" alt="Local preview of the selected image (this session only)" />
+        <dl id="tech-checks" class="tech-checks"></dl>
+      </div>
+
+      <label class="confirm">
+        <input type="checkbox" id="confirm-box" />
+        I confirm this is a professionally acquired retinal fundus photograph.
+      </label>
+
+      <div class="run-row">
+        <button id="run-btn" class="primary-btn" disabled>Run prediction</button>
+        <span id="run-status" class="run-status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <!-- F.3 Results panel -->
+    <section class="card results-panel" id="results-panel" aria-labelledby="results-h" hidden>
+      <h2 id="results-h">2 · Research triage result</h2>
+      <div class="decision" id="decision-badge">
+        <span class="decision-label" id="decision-label">—</span>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric">
+          <div class="metric-k">Referable-DR research score</div>
+          <div class="metric-v" id="score-val">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-k">Validation-selected threshold</div>
+          <div class="metric-v" id="threshold-val">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-k">Status</div>
+          <div class="metric-v" id="threshold-status-val">—</div>
+        </div>
+      </div>
+
+      <p class="op-note" id="op-note"></p>
+      <p class="op-context" id="op-context"></p>
+      <p class="alert-line" id="alert-line"></p>
+      <p class="not-calibrated">
+        This is an operating-point triage result, not a calibrated probability.
+      </p>
+    </section>
+
+    <!-- F.4 Pipeline visualization -->
+    <section class="card pipeline-panel" id="pipeline-panel" aria-labelledby="pipeline-h" hidden>
+      <h2 id="pipeline-h">3 · Pipeline trace (this request)</h2>
+      <img class="pipeline-schematic" src="/static/assets/pipeline.svg"
+           alt="Schematic: image to native-392 preprocessing to frozen backbone to embedding to multi-task head to referable mass to threshold to decision." />
+      <ol id="pipeline-flow" class="pipeline-flow"></ol>
+    </section>
+
+    <!-- F.5 Efficiency statement -->
+    <p class="efficiency">
+      This demonstrator runs the frozen ~22M-parameter RETFound-Green backbone
+      selected from the study&rsquo;s internal referable-DR comparison.
+    </p>
+
+    <!-- F.6 About / study basis -->
+    <details class="card about">
+      <summary>About &amp; study basis</summary>
+      <div class="about-body">
+        <p>
+          <strong>FROST</strong> (Frozen Representation for Ocular Screening and
+          Triage) reproduces, for local inspection, the referable diabetic
+          retinopathy pipeline from the underlying study. The study itself is
+          defined in the manuscript; FROST is a demonstrator built on top of it.
+        </p>
+        <ul>
+          <li><strong>Dataset:</strong> BRSET, a Brazilian colour-fundus dataset; results are from BRSET&rsquo;s internal distribution.</li>
+          <li><strong>Cohort &amp; split:</strong> a patient-level train / validation / reliability / test split (no patient appears in two splits).</li>
+          <li><strong>Referable DR:</strong> defined as DR grade &ge; 2 (moderate non-proliferative DR or worse).</li>
+          <li><strong>Model:</strong> a frozen RETFound-Green backbone at its native 392&times;392 protocol (average pooling, 384-dimensional embedding) feeding a lightweight multi-task head. The backbone receives no gradient updates.</li>
+          <li><strong>Why this model:</strong> it was selected for the demonstrator for its strong internal referable-DR performance with a compact frozen backbone &mdash; not a claim of universal superiority over larger models.</li>
+          <li><strong>Uncertainty:</strong> the study reported patient-clustered bootstrap confidence intervals as study-level evidence; these are not per-image confidence.</li>
+          <li><strong>Operating point:</strong> the decision threshold was selected on the validation split only (largest threshold preserving validation sensitivity &ge; 0.95) and then frozen.</li>
+          <li><strong>No online learning:</strong> uploads never update the model, threshold, or any parameter.</li>
+        </ul>
+        <!-- F.6 — the SECOND and final full limitation statement -->
+        <p class="limitation">
+          External population, device, workflow, calibration, and prospective
+          clinical validation remain future work. Internal BRSET performance does
+          not guarantee performance on images from other sources.
+        </p>
+      </div>
+    </details>
+  </main>
+
+  <footer class="site-footer">
+    FROST · local referable-DR research demonstrator · runs entirely on
+    <code>127.0.0.1</code> · no external network access
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# FROST app-local .gitignore
+# Keep all private / local / generated artifacts out of version control.
+
+# Local private artifacts: deployment bundle, operating point, parity fixtures,
+# discovered private paths, hashes bound to local checkpoints. NEVER commit.
+.local/
+*.local.json
+*.local.yaml
+
+# Uploaded images / runtime logs / screenshots (may contain real fundus images)
+uploads/
+logs/
+screenshots/
+*.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+
+# Explicitly DO commit the example templates (negated patterns for clarity):
+!config/deployment_bundle.example.yaml
+!config/operating_point.example.json
