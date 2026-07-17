@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 120" role="img"
+     aria-label="FROST pipeline: image, native-392 preprocessing, frozen RETFound-Green backbone, 384-d embedding, locked MultiTaskHead, referable mass, validation threshold, decision">
+  <defs>
+    <marker id="arrowhead" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8"
+            refX="6.5" refY="3.5" orient="auto">
+      <path d="M0 0.5 L6.5 3.5 L0 6.5 Z" fill="#111111"/>
+    </marker>
+  </defs>
+  <style>
+    .box { fill:#fbfcfd; stroke:#111111; stroke-width:1.2; }
+    .frozen, .hl { stroke:#1f5066; stroke-width:1.8; }
+    .t { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size:11px; fill:#1b2227; }
+    .accent { fill:#1f5066; }
+    .arrow { stroke:#111111; stroke-width:1.6; fill:none; }
+  </style>
+
+  <!-- stages (pure rectangles, headings only) -->
+  <g>
+    <rect class="box" x="8"   y="36" width="96" height="48"/>
+    <text class="t" x="56" y="64" text-anchor="middle">Image</text>
+
+    <rect class="box" x="124" y="36" width="104" height="48"/>
+    <text class="t" x="176" y="64" text-anchor="middle">Preprocess</text>
+
+    <rect class="box frozen" x="248" y="30" width="128" height="60"/>
+    <text class="t accent" x="312" y="64" text-anchor="middle">RETFound-Green</text>
+
+    <rect class="box" x="396" y="36" width="92" height="48"/>
+    <text class="t" x="442" y="64" text-anchor="middle">Embedding</text>
+
+    <rect class="box hl" x="508" y="36" width="104" height="48"/>
+    <text class="t" x="560" y="64" text-anchor="middle">MultiTaskHead</text>
+
+    <rect class="box" x="632" y="36" width="104" height="48"/>
+    <text class="t" x="684" y="64" text-anchor="middle">Referable mass</text>
+
+    <rect class="box" x="756" y="36" width="96" height="48"/>
+    <text class="t" x="804" y="64" text-anchor="middle">Threshold</text>
+
+    <rect class="box" x="872" y="36" width="80" height="48"/>
+    <text class="t accent" x="912" y="64" text-anchor="middle">Triage</text>
+  </g>
+
+  <!-- arrows: 3px clear gap from each box, arrowhead at the tip -->
+  <g class="arrow">
+    <path d="M107 60 L121 60" marker-end="url(#arrowhead)"/>
+    <path d="M231 60 L245 60" marker-end="url(#arrowhead)"/>
+    <path d="M379 60 L393 60" marker-end="url(#arrowhead)"/>
+    <path d="M491 60 L505 60" marker-end="url(#arrowhead)"/>
+    <path d="M615 60 L629 60" marker-end="url(#arrowhead)"/>
+    <path d="M739 60 L753 60" marker-end="url(#arrowhead)"/>
+    <path d="M855 60 L869 60" marker-end="url(#arrowhead)"/>
+  </g>
+</svg>
