@@ -1,230 +1,367 @@
-<h1 align="center">FROST</h1>
-<p align="center"><strong>Frozen Representations for Ocular Screening and Triage</strong></p>
+# FROST: Frozen Representations for Ocular Screening and Triage in Referable Diabetic Retinopathy
 
-<p align="center">
-A self-contained inference service that serves a frozen ~22M-parameter vision model
-end-to-end on commodity CPU — and <em>refuses to start</em> unless it can prove, at boot,
-that it reproduces the reference model bit-for-bit.
-</p>
+FROST is a reproducible Python research system for benchmarking frozen visual representations on retinal fundus images and deploying the empirically selected representation as a low-compute referable diabetic retinopathy (DR) triage demonstrator.
 
-<p align="center">
-  <a href="https://nikunj985-frost-referable-dr.hf.space"><strong>▶ Live demo</strong></a> &nbsp;·&nbsp;
-  <a href="#quickstart">Run locally</a> &nbsp;·&nbsp;
-  <a href="#how-it-works">How it works</a> &nbsp;·&nbsp;
-  <a href="deploy/referable_dr_demo/hf_space/DEPLOY.md">Deploy</a>
-</p>
+The repository implements the complete experimental path used in the study: patient-level data partitioning, deterministic image preprocessing, frozen-backbone feature extraction, provenance-aware embedding caches, lightweight head training, held-out evaluation, and patient-clustered statistical comparison.
 
-<p align="center">
-  <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white">
-  <img alt="PyTorch CPU" src="https://img.shields.io/badge/PyTorch-2.12%20(CPU)-EE4C2C?logo=pytorch&logoColor=white">
-  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-single%20container-2496ED?logo=docker&logoColor=white">
-  <img alt="Live on HF Spaces" src="https://img.shields.io/badge/deployed-HF%20Spaces-yellow">
-</p>
+**Live research demonstrator:** [FROST on Hugging Face Spaces](https://nikunj985-frost-referable-dr.hf.space/)
 
----
+> **Research use only.** FROST is not a diagnostic medical device. Its output is a screening-oriented research result and requires independent clinical assessment.
 
-## TL;DR — why this is worth a look
+## Study at a Glance
 
-FROST takes one uploaded retinal photograph and returns a screening decision **plus a
-complete, step-by-step trace of how it got there** — in well under a second, on a free CPU
-container, with no GPU anywhere. The interesting part isn't the model; it's the engineering
-around it:
+| Item | Reported study |
+|---|---|
+| Dataset | BRSET |
+| Cohort | 16,266 fundus images from 8,524 patients |
+| Split | Patient-level 60/15/15/10 train/validation/reliability/test |
+| Test set | 1,623 images from 854 patients |
+| Patient overlap across splits | 0 |
+| Comparison | 7 backbone/protocol rows x 2 prediction heads = 14 experimental cells |
+| Primary endpoint | Referable DR, defined as DR grade >= 2 |
+| Secondary endpoints | Six-condition macro-AUROC and 5-class DR balanced accuracy |
+| Statistical analysis | 2,000-resample patient-clustered bootstrap with paired comparisons |
+| Best referable-DR result | RETFound-Green native-392 + multi-task head: AUROC 0.985 [0.964-0.997] |
+| Deployment model | RETFound-Green native-392 + locked multi-task head |
 
-- **Reproducibility enforced at runtime, not asserted in a README.** On boot the service
-  computes the model output two independent ways and **refuses to serve** unless they agree
-  to ≤ 1e-5 (measured: `0.0`). A separate pre-deploy gate proves the served scores match the
-  study's saved predictions to < 1e-4 (measured: `5e-10`).
-- **Provenance-bound decisions.** The decision threshold is cryptographically bound (SHA-256)
-  to the exact backbone **+** head **+** preprocessing **+** task ordering it was derived from.
-  Any drift → `HTTP 503`. The service will emit a *correct* number or *no* number — never a
-  wrong one.
-- **One container, CPU-only, GPU-free.** FastAPI serves both the API and the static UI from a
-  single origin (so: zero CORS config). The 84 MB public backbone is fetched and SHA-verified
-  at image-build time; the 501 KB trained head rides inside the image. **No credentialed data
-  is anywhere in the deployable artifact.**
-- **Glass-box by default.** Every request returns the full pipeline trace — preprocessing →
-  frozen backbone → embedding → head → score → threshold → decision — rendered live in the UI.
-- **Privacy by construction.** Uploads are processed in memory and discarded per request. No
-  storage, no accounts, no identifiers logged.
-- **Strict isolation + tested.** The entire app lives under `deploy/referable_dr_demo/` and
-  imports the research code as a **read-only** library — it never mutates a single pipeline
-  file. 26 app-local tests cover parity, privacy, "no-training-imports," threshold provenance,
-  and the load-once singleton.
+## What Is Implemented
 
-**→ [Open the live demo](https://nikunj985-frost-referable-dr.hf.space)** and upload any colour
-fundus image to see the decision and the trace.
+The paper-facing system is focused on the work that was actually completed and evaluated:
 
----
+- BRSET ingestion through a dataset adapter and canonical sample schema.
+- Patient-level splitting with explicit zero-overlap auditing.
+- Deterministic matched-224 preprocessing for all backbones.
+- Native-392 RETFound-Green extraction as a controlled protocol comparison.
+- Frozen feature extraction for supervised CNNs, general self-supervised ViTs, and a retina-specific self-supervised model.
+- Reusable embedding caches with manifests, preprocessing identity, and extraction provenance.
+- A per-task linear probe and a shared multi-task prediction head.
+- Task-masked losses for incomplete labels.
+- AdamW training, warmup, cosine scheduling, gradient clipping, validation-based early stopping, and best-checkpoint restoration.
+- Held-out test evaluation for referable DR, six binary conditions, and 5-class DR grading.
+- Patient-clustered bootstrap confidence intervals and paired delta testing.
+- A hosted single-image research demonstrator using the empirically selected parameter-efficient model.
 
-## Screenshots
+Earlier plans for external validation, fairness mitigation, continual learning, OOD gating, online updating, and saliency-based explainability are **not part of the reported study and are not claimed here**.
 
-<p align="center"><img src="docs/img/pipeline.svg" alt="FROST inference pipeline" width="100%"></p>
+## Experimental Pipeline
+<img width="1349" height="614" alt="image" src="https://github.com/user-attachments/assets/9e692d8a-afaf-49a7-9b58-c46c5e2aa35b" />
 
-<!--
-  Add three PNGs to docs/img/ (see docs/img/README.md), then uncomment this block:
+## Compared Representations
 
-  <p align="center"><img src="docs/img/frost-home.png"   alt="FROST home"   width="90%"></p>
-  <p align="center"><img src="docs/img/frost-triage.png" alt="Triage result" width="90%"></p>
-  <p align="center"><img src="docs/img/frost-report.png" alt="Analysis report" width="90%"></p>
--->
+Seven backbone/protocol rows were evaluated. RETFound-Green appears twice because matched and native extraction were treated as an explicit experimental axis.
 
-> The three tool screenshots aren't committed yet — drop `frost-home.png`,
-> `frost-triage.png`, `frost-report.png` into [`docs/img/`](docs/img/) and uncomment the block
-> above. Until then, the **[live demo](https://nikunj985-frost-referable-dr.hf.space)** is the
-> best way to see the interface.
+| Family | Backbone | Protocol | Embedding dimension |
+|---|---|---:|---:|
+| Supervised CNN | ResNet-50 | 224 matched | 2,048 |
+| Supervised CNN | ConvNeXt-Base | 224 matched | 1,024 |
+| General SSL ViT | DINOv2-Base | 224 matched | 768 |
+| General SSL ViT | DINOv2-Large | 224 matched | 1,024 |
+| General SSL ViT | DINOv3-Large | 224 matched | 1,024 |
+| Retina-specific SSL ViT | RETFound-Green | 224 matched | 384 |
+| Retina-specific SSL ViT | RETFound-Green | 392 native | 384 |
 
----
+All backbone parameters remained frozen. Only the downstream prediction heads were trained.
 
-## What it does
+### Prediction heads
 
-Upload a retinal fundus photograph → FROST runs a fixed, frozen model pipeline and returns a
-binary **triage decision** with a numeric score, a threshold gauge, and a per-stage trace.
+**Linear probe (LP)**
 
-The model is never trained or updated at request time. It is a **frozen** feature extractor
-(`RETFound-Green`, a ViT-Small/14 at its native 392×392 resolution, average-pooled to a
-384-dimensional embedding) feeding a small **multi-task prediction head**. The head emits
-5-class grade logits; the screening score is the softmax mass on the upper classes; a single
-threshold fixed on a held-out validation split turns that score into the decision. That's it —
-deliberately small, fast, and reproducible.
+A single linear layer is fitted per task on top of the frozen embedding. This measures the direct linear separability of each representation.
 
-> FROST is a **research demonstrator**, not a medical device, and is validated only on one
-> dataset's internal distribution. The UI states this prominently.
+**Multi-task head (MT)**
 
----
+A shared nonlinear trunk is trained jointly across the available tasks, followed by task-specific output layers. Cross-entropy is used for 5-class DR grading, binary cross-entropy is used for the six binary conditions, and per-task losses are combined with Kendall uncertainty weighting.
 
-## <a id="how-it-works"></a>How it works
+## Endpoints
 
-### Request lifecycle
+### Primary endpoint: referable DR
+
+The model predicts a five-class DR distribution. The referable-DR score is computed as:
+
+```text
+P(referable DR) = P(grade 2) + P(grade 3) + P(grade 4)
 ```
-POST /predict (multipart image, in-memory)
-  → technical input checks (decode, size, format — never stored)
-  → native-392 preprocessing        (exact study transform, hash-verified)
-  → frozen backbone  → 384-d embedding
-  → multi-task head  → 5-class logits
-  → softmax → screening score (mass on upper grades)
-  → fixed validation-derived threshold → decision
-  → JSON: decision + score + threshold + full pipeline_trace + timings
+
+This directly represents the study's triage question: whether an image crosses the moderate-or-worse referral boundary.
+
+### Multi-condition panel
+
+The secondary binary panel contains:
+
+- macular edema,
+- hypertensive retinopathy,
+- age-related macular degeneration (AMD),
+- drusen,
+- other ocular findings,
+- diabetes as a record-derived proxy label.
+
+The six-task macro-AUROC excludes the five-class DR output. Hypertensive retinopathy is an ophthalmological grading, not a systemic blood-pressure measurement, and the diabetes flag is treated as a screening proxy rather than a diagnosis from the image alone.
+
+## Training and Evaluation Protocol
+
+A single pre-specified recipe was applied across all 14 cells:
+
+| Setting | Value |
+|---|---:|
+| Optimizer | AdamW |
+| Learning rate | 1e-4 |
+| Weight decay | 0.01 |
+| Batch size | 256 |
+| Warmup | 5 epochs |
+| Scheduler | Cosine annealing |
+| Maximum epochs | 100 |
+| Early-stopping patience | 10 |
+| Gradient clipping | 1.0 |
+| Checkpoint criterion | Validation six-task macro-AUROC |
+| Random seed | 42 |
+| Class weighting in primary matrix | Disabled |
+| Backbone fine-tuning | Disabled |
+
+The validation split was used for model selection. The reliability split was held out for work outside the reported paper. Final metrics were calculated once on the untouched test partition.
+
+For uncertainty estimation, all images belonging to the same patient were resampled together. Each metric used 2,000 patient-clustered bootstrap replicates, with the 2.5th and 97.5th percentiles reported as the 95% confidence interval.
+
+## Main Results
+
+### Complete backbone x head matrix
+
+| Backbone and protocol | Referable-DR AUROC, MT | Referable-DR AUROC, LP | Six-task macro-AUROC, MT | Six-task macro-AUROC, LP | 5-class balanced accuracy, MT | 5-class balanced accuracy, LP |
+|---|---:|---:|---:|---:|---:|---:|
+| ResNet-50, 224 | 0.942 [0.901-0.974] | 0.920 [0.885-0.949] | 0.818 [0.790-0.845] | 0.774 [0.742-0.804] | 0.384 | 0.239 |
+| ConvNeXt-Base, 224 | 0.975 [0.954-0.989] | 0.943 [0.913-0.969] | 0.846 [0.821-0.871] | 0.800 [0.771-0.829] | 0.400 | 0.307 |
+| DINOv2-Base, 224 | 0.973 [0.951-0.989] | 0.958 [0.931-0.981] | 0.874 [0.855-0.892] | 0.851 [0.830-0.871] | 0.436 | 0.418 |
+| DINOv2-Large, 224 | 0.979 [0.956-0.993] | 0.974 [0.958-0.987] | 0.880 [0.854-0.904] | 0.847 [0.819-0.875] | 0.474 | 0.423 |
+| RETFound-Green, 224 matched | 0.978 [0.959-0.991] | 0.968 [0.950-0.984] | 0.843 PE | 0.806 PE | 0.399 | 0.355 |
+| DINOv3-Large, 224 | 0.977 [0.956-0.993] | 0.962 [0.938-0.980] | 0.875 PE | 0.829 PE | 0.419 | 0.347 |
+| RETFound-Green, 392 native | **0.985 [0.964-0.997]** | 0.968 [0.951-0.982] | 0.875 PE | 0.819 PE | 0.463 | 0.332 |
+
+`PE` indicates a point estimate where the final manuscript does not report a confidence interval for that macro-AUROC cell.
+
+### Primary Referable-DR performance across the matrix
+<img width="1082" height="568" alt="image" src="https://github.com/user-attachments/assets/cde9bd43-f705-4d6a-ba5b-95ef18d770f1" />
+
+
+### Findings supported by the comparison
+
+1. **The largest model was not automatically the best deployment choice.** RETFound-Green native-392 used approximately 22M parameters and 384-dimensional embeddings, yet its referable-DR result was not separable from DINOv2-Large or DINOv3-Large. It had a supported +0.012 AUROC advantage over DINOv2-Base.
+
+2. **Pretraining paradigm mattered more than within-family scaling for the reported macro endpoint.** ConvNeXt-Base to DINOv2-Base improved macro-AUROC by +0.029 [0.010-0.049], while DINOv2-Base to DINOv2-Large added +0.006 [-0.015-0.025] and was not separable.
+
+3. **The multi-task head improved the six-task panel.** MT exceeded LP in every row. For the four backbones with paired macro-AUROC intervals, the gains were supported and ranged from +0.024 to +0.046.
+
+4. **The head benefit was concentrated on sparse targets.** The largest gains appeared on AMD, the rarest binary condition: +0.131 [0.057-0.215] for ResNet-50 and +0.109 [0.015-0.212] for DINOv2-Large.
+
+5. **Extraction protocol was a real performance variable.** Moving RETFound-Green from matched-224 to native-392 changed the six-task macro-AUROC by +0.032 in point estimates. The referable-DR AUROC difference was not separable, but referable-DR AUPRC improved by +0.048 [0.003-0.096].
+
+6. **Binary triage was substantially more reliable than fine-grained grading.** Referable-DR discrimination was strong, while five-class balanced accuracy remained limited because grade 0 represented 93.5% of the test images and mild/moderate grades were extremely sparse.
+
+## FROST Research Demonstrator
+
+The hosted FROST demonstrator uses the deployment choice supported by the comparison:
+
+```text
+Uploaded fundus image
+    -> native 392 preprocessing
+    -> frozen RETFound-Green backbone
+    -> 384-dimensional embedding
+    -> locked multi-task head
+    -> DR grade probability distribution
+    -> probability mass on grades 2, 3, and 4
+    -> validation-selected threshold
+    -> research triage result
 ```
-The frontend (vanilla HTML/CSS/JS, no framework, no build step) is served by the **same**
-FastAPI app and renders that `pipeline_trace` as the visible "analysis report."
 
-### The parity gate (the part that makes it trustworthy)
-The service does not re-implement the model — it imports the study's own loader,
-preprocessing, and scoring functions from `src/retina_screen/` as read-only libraries, then
-proves equivalence before going live:
+The interface:
 
-- **Synthetic parity (runs on every boot):** the app's inference path is compared against an
-  independent, inline reconstruction built from the same primitives. Max abs logit diff must
-  be ≤ 1e-5. If it fails, the server comes up **blocked** and `/predict` returns `503`.
-- **Study-linked parity (local pre-deploy gate):** the app's scores are compared against the
-  study's saved `predictions.npz` on real held-out images; abs diff must be < 1e-4. This runs
-  on the author's machine (the data is credentialed) and is the sign-off before any deploy.
-- **On the server**, where credentialed images are absent by design, the boot self-check is
-  synthetic-parity **plus** a random-tensor integrity check (finite, in-range, correct shapes)
-  — no real image ever required.
+- accepts a professionally acquired JPEG or PNG fundus image,
+- processes the image in memory,
+- displays image and preprocessing information,
+- reports the referable-DR research score and fixed threshold,
+- visualizes the five DR-grade outputs,
+- shows the exact inference sequence used to produce the triage decision,
+- runs on commodity CPU hardware in under one second after model loading.
 
-### Provenance binding
-A validated "deployment bundle" records SHA-256 hashes of the backbone checkpoint, the head
-checkpoint, the preprocessing config, and the task ordering. The operating-point threshold is
-refused unless every one of those still matches. Change any artifact and the service fails
-closed rather than silently serving a threshold that no longer applies.
+The fixed validation-selected threshold is approximately `0.0444`. At this operating point, the reported sensitivity was `0.973` and specificity was `0.953` on the study's internal BRSET evaluation. The displayed score is an operating-point triage score, not a calibrated probability.
 
-### Load-once singleton
-The backbone + head are constructed **once** per process at startup (`eval`, `no_grad`,
-frozen, warm-up pass), then reused for every request — no per-request model loading, no
-gradient graph ever built.
+The hosted interface is a companion deployment artifact. The reproduction workflow below covers the research repository's feature-extraction, training, and evaluation pipeline.
 
----
+<img width="1160" height="810" alt="image" src="https://github.com/user-attachments/assets/5b5cfc98-1bc8-47c7-8231-b6299ba734fa" />
 
-## Tech stack
+<img width="1132" height="679" alt="image" src="https://github.com/user-attachments/assets/2b0391e4-1ded-47ab-97d8-8caeaea89ff2" />
 
-- **Serving:** Python 3.12, FastAPI + Uvicorn, single-origin static frontend (no CORS).
-- **Model:** PyTorch 2.12 (CPU wheels), `timm` 1.0.27 (`vit_small_patch14_reg4_dinov2`).
-- **Frontend:** hand-written HTML/CSS/JS — no framework, no bundler, no CDN.
-- **Packaging/deploy:** Docker (one image), Hugging Face **Docker Space**, free CPU tier.
-  Backbone fetched + SHA-verified at build; head + operating point travel in-image.
-- **Reproducibility:** module-level singleton, fail-closed parity + provenance gates,
-  pinned dependency set.
+<img width="294" height="244" alt="image" src="https://github.com/user-attachments/assets/97486bbd-9056-4569-81e8-44c4711df09d" />
 
----
 
-## <a id="quickstart"></a>Quickstart (run locally)
 
-Prereqs: the frozen backbone checkpoint and the trained head checkpoint on disk (paths are
-resolved from env vars — nothing private is hardcoded). Then:
+## Engineering Design
+
+The repository uses a config-driven modular architecture rather than notebook-only experiments.
+
+Key engineering properties include:
+
+- dataset-specific parsing isolated behind adapters,
+- canonical downstream sample and task contracts,
+- patient-leakage checks before training,
+- deterministic backbone-specific preprocessing,
+- one-image backbone verification before full extraction,
+- frozen model loading with explicit embedding-dimension validation,
+- cache namespaces keyed by backbone, dataset, and preprocessing identity,
+- embedding manifests and extraction provenance,
+- reusable caches shared by MT and LP runs,
+- task masks for missing labels,
+- resolved configuration and run metadata saved with each training run,
+- best-validation and last-epoch checkpoints stored separately,
+- head-type-safe checkpoint reconstruction during evaluation,
+- sparse and single-class metric safeguards,
+- machine-readable JSON evaluation artifacts,
+- unit, integration, and architecture-boundary tests.
+
+## Installation
+
+FROST supports Python 3.10-3.12.
 
 ```bash
-# 1. build the local deployment bundle (hashes + shape/pooling/size gates)
-python deploy/referable_dr_demo/analysis/build_local_deployment_bundle.py
+git clone https://github.com/Solace985/FROST.git
+cd FROST
 
-# 2. derive the validation-only operating-point threshold
-python deploy/referable_dr_demo/analysis/derive_threshold.py
-
-# 3. prove parity (synthetic + study-linked) — must print PASS
-python deploy/referable_dr_demo/analysis/verify_parity.py
-
-# 4. launch (serves API + UI at http://127.0.0.1:8000)
-uvicorn deploy.referable_dr_demo.backend.app:app --host 127.0.0.1 --port 8000
+python -m venv .venv
 ```
 
-App-local tests:
+Activate the environment:
+
 ```bash
-pytest deploy/referable_dr_demo/tests -q
+# Linux/macOS
+source .venv/bin/activate
 ```
 
-Full setup notes live in [`deploy/referable_dr_demo/README.md`](deploy/referable_dr_demo/README.md).
-
-## Deploy (free, persistent, CPU)
-
-One command stages a ready-to-push Hugging Face Docker Space (code + head + operating point,
-no credentialed data); the backbone is fetched at build. Full runbook:
-**[`deploy/referable_dr_demo/hf_space/DEPLOY.md`](deploy/referable_dr_demo/hf_space/DEPLOY.md)**.
-
----
-
-## Repository layout
-
-The tool is fully contained under `deploy/referable_dr_demo/`; the rest of the repo is the
-research pipeline it reproduces.
-
-```
-deploy/referable_dr_demo/
-├── backend/            FastAPI app, response schemas, static serving
-│   └── service/        bundle validation · frozen inference · preprocessing parity
-│                       · threshold policy · provenance/hashing · privacy
-├── frontend/           vanilla HTML/CSS/JS UI + pipeline diagram
-├── analysis/           bundle build · threshold derivation · parity gate
-├── hf_space/           Dockerfile · assemble_space.py · deploy runbook
-└── tests/              26 app-local tests
-
-src/retina_screen/      the research pipeline (imported READ-ONLY by the tool)
-configs/                backbone / preprocessing / task YAMLs
-docs/                   project docs and this README's images
+```powershell
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
 ```
 
----
+Install the research dependencies:
 
-## The research behind it
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-FROST is the deployable artifact of a controlled study that compares **frozen** foundation-model
-representations (supervised CNNs, general self-supervised ViTs, and a retina-specific model) for
-retinal screening under one fixed, patient-level protocol with bootstrap confidence intervals.
-The headline engineering choice — a **22M-parameter** frozen backbone instead of a ~300M one —
-is grounded in that comparison: the small retina-specific model was statistically **not
-separable** from models ~14× its size on the target endpoint, so FROST deploys the efficient
-one on purpose.
+The current `requirements.txt` installs the package in editable mode with the development, PyTorch, and visualization extras.
 
-The full methodology, results, and figures are in the manuscript (`paper/`). This README is
-intentionally about the **tool**; the comparison lives in the paper.
+## BRSET Data Setup
 
----
+BRSET is distributed through PhysioNet under credentialed access and is not included in this repository:
 
-## Attribution, license & data
+[BRSET v1.0.1 on PhysioNet](https://physionet.org/content/brazilian-ophthalmological/1.0.1/)
 
-- **Backbone:** RETFound-Green — public weights under **Apache-2.0**; fetched from its official
-  release and SHA-verified at build.
-- **Prediction head:** trained in this work; freely redistributable.
-- **Dataset:** BRSET, available on PhysioNet under **credentialed access**. No dataset images
-  are stored in this repo, in the Docker image, or in the hosted Space.
-- **Repository license:** to be finalized before public release.
+Keep raw images, metadata, split manifests containing identifiers, embedding caches, checkpoints, and generated run artifacts outside version control.
+
+Configure the local dataset root using the project configuration or environment variable:
+
+```bash
+# Linux/macOS
+export RETINA_SCREEN_BRSET_ROOT=/absolute/path/to/brset
+```
+
+```powershell
+# Windows PowerShell
+$env:RETINA_SCREEN_BRSET_ROOT = "C:\path\to\brset"
+```
+
+## Running the Research Pipeline
+
+Experiment behavior is controlled through YAML files in `configs/`. Use the exact paper-facing configuration for the backbone, protocol, and head being reproduced.
+
+### 1. Run the test suite
+
+```bash
+pytest
+```
+
+### 2. Create or verify the patient-level split
+
+```bash
+python scripts/01_make_splits.py --config <experiment-config.yaml>
+```
+
+### 3. Verify one image through the selected backbone
+
+```bash
+python scripts/02_verify_backbone_one_image.py --config <experiment-config.yaml>
+```
+
+This gate verifies model loading, preprocessing, frozen status, output dimension, and cache compatibility before full extraction.
+
+### 4. Extract and cache embeddings
+
+```bash
+python scripts/03_extract_embeddings.py --config <experiment-config.yaml>
+```
+
+### 5. Train the selected head
+
+```bash
+python scripts/04_train.py --config <experiment-config.yaml>
+```
+
+### 6. Evaluate the best-validation checkpoint
+
+```bash
+python scripts/05_evaluate.py \
+  --config <experiment-config.yaml> \
+  --run-dir runs/train/<run-id>
+```
+
+The two head types for a backbone must resolve to the same embedding cache when their backbone and preprocessing protocol are identical.
+
+## Generated Artifacts
+
+A complete run produces machine-readable provenance and evaluation outputs similar to:
+
+```text
+cache/embeddings/<backbone>/<dataset>/<preprocessing-hash>/
+  manifest.csv
+  cache_provenance.json
+  <sample-id>.pt
+
+runs/train/<run-id>/
+  resolved_config.yaml
+  run_metadata.json
+  train_log.csv
+  model_checkpoint.pt
+  model_last.pt
+
+outputs/evaluation/<evaluation-id>/
+  evaluation_summary.json
+  overall_metrics.json
+  subgroup_metrics.json
+  diagnostics.json
+```
+
+Generated data and model artifacts are intentionally excluded from Git.
+
+## Scope and Limitations
+
+- The reported benchmark is an internal BRSET evaluation; no external population or cross-device validation is claimed.
+- The matrix uses one fixed random seed and one shared training recipe to isolate representation and head effects.
+- The test set contains only 73 referable-DR images, and several secondary conditions contain fewer than 35 positives.
+- Patient-clustered confidence intervals reduce false precision but do not remove uncertainty caused by sparse outcomes.
+- The primary matrix does not use class weighting, oversampling, focal loss, or threshold tuning per backbone.
+- Fine-grained five-class DR grading remains weak under the highly imbalanced class distribution.
+- The FROST demonstrator is intended for professionally acquired fundus photographs and has only been validated on the internal BRSET distribution.
+- Demonstrator output must not be interpreted as a diagnosis or as a calibrated probability of disease.
+
+## Citation
+
+```bibtex
+@misc{chauhan2026frost,
+  title  = {FROST: Frozen Representations for Ocular Screening and Triage in Referable Diabetic Retinopathy},
+  author = {Chauhan, Ritu},
+  year   = {2026},
+  note   = {Research manuscript and software repository}
+}
+```
+
+## License
+
+A project license has not yet been specified. Add a `LICENSE` file before redistribution or reuse outside the terms explicitly granted by the repository owner and upstream model/dataset providers.
