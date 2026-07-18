@@ -1,4 +1,4 @@
-# Retinal Fundus Foundation-Model Pipeline
+# FROST: Frozen Representations for Ocular Screening and Triage in Referable Diabetic Retinopathy
 
 A reproducible research pipeline for retinal fundus image analysis using frozen foundation-model embeddings, multi-task prediction heads, fairness auditing, cross-site validation, continual-learning simulation, explainability, and a research dashboard.
 
