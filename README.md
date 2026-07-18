@@ -8,7 +8,7 @@ that it reproduces the reference model bit-for-bit.
 </p>
 
 <p align="center">
-  <a href="https://S0lace-frost-referable-dr.hf.space"><strong>▶ Live demo</strong></a> &nbsp;·&nbsp;
+  <a href="https://nikunj985-frost-referable-dr.hf.space"><strong>▶ Live demo</strong></a> &nbsp;·&nbsp;
   <a href="#quickstart">Run locally</a> &nbsp;·&nbsp;
   <a href="#how-it-works">How it works</a> &nbsp;·&nbsp;
   <a href="deploy/referable_dr_demo/hf_space/DEPLOY.md">Deploy</a>
@@ -71,7 +71,7 @@ fundus image to see the decision and the trace.
 
 > The three tool screenshots aren't committed yet — drop `frost-home.png`,
 > `frost-triage.png`, `frost-report.png` into [`docs/img/`](docs/img/) and uncomment the block
-> above. Until then, the **[live demo](https://S0lace-frost-referable-dr.hf.space)** is the
+> above. Until then, the **[live demo](https://nikunj985-frost-referable-dr.hf.space)** is the
 > best way to see the interface.
 
 ---

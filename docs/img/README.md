@@ -8,6 +8,6 @@ PNGs here (same filenames) and they render automatically on GitHub:
 - **`frost-report.png`** — the **FROST analysis report** (the per-request pipeline trace with the pie chart).
 
 Fastest source: export Figures 12, 13 and 14 from the manuscript, **or** take fresh
-captures from the live demo (https://S0lace-frost-referable-dr.hf.space). Recommended
+captures from the live demo (https://nikunj985-frost-referable-dr.hf.space). Recommended
 width ≈ 1200 px. After adding them, uncomment the `<img>` block in the root README's
 **Screenshots** section (or leave it — the images render wherever they're referenced).
