@@ -1,234 +1,367 @@
 # FROST: Frozen Representations for Ocular Screening and Triage in Referable Diabetic Retinopathy
 
-A reproducible research pipeline for retinal fundus image analysis using frozen foundation-model embeddings, multi-task prediction heads, fairness auditing, cross-site validation, continual-learning simulation, explainability, and a research dashboard.
+FROST is a reproducible Python research system for benchmarking frozen visual representations on retinal fundus images and deploying the empirically selected representation as a low-compute referable diabetic retinopathy (DR) triage demonstrator.
 
-The project is designed for a medical AI research paper targeting a mid-to-top-tier venue depending on dataset access and final experimental strength.
+The repository implements the complete experimental path used in the study: patient-level data partitioning, deterministic image preprocessing, frozen-backbone feature extraction, provenance-aware embedding caches, lightweight head training, held-out evaluation, and patient-clustered statistical comparison.
 
-## Project Goal
+**Live research demonstrator:** [FROST on Hugging Face Spaces](https://nikunj985-frost-referable-dr.hf.space/)
 
-This repository builds a dataset-agnostic retinal screening pipeline that can support:
+> **Research use only.** FROST is not a diagnostic medical device. Its output is a screening-oriented research result and requires independent clinical assessment.
 
-- multi-condition retinal disease prediction,
-- foundation-model backbone comparison,
-- patient-level data splitting,
-- task-masked multi-task learning,
-- fairness and subgroup auditing,
-- external/cross-site validation,
-- OOD-aware continual-learning simulation,
-- image-level explainability,
-- subgroup reliability lookup,
-- and a research-use dashboard.
+## Study at a Glance
 
-The initial MVP is built with a `DummyAdapter` first, then extended to ODIR-5K
-(Stage 7 smoke complete), and then to BRSET/mBRSET. BRSET and mBRSET are local
-but not integrated; they require local preflight, adapter implementation, and
-evaluation before scientific claims.
+| Item | Reported study |
+|---|---|
+| Dataset | BRSET |
+| Cohort | 16,266 fundus images from 8,524 patients |
+| Split | Patient-level 60/15/15/10 train/validation/reliability/test |
+| Test set | 1,623 images from 854 patients |
+| Patient overlap across splits | 0 |
+| Comparison | 7 backbone/protocol rows x 2 prediction heads = 14 experimental cells |
+| Primary endpoint | Referable DR, defined as DR grade >= 2 |
+| Secondary endpoints | Six-condition macro-AUROC and 5-class DR balanced accuracy |
+| Statistical analysis | 2,000-resample patient-clustered bootstrap with paired comparisons |
+| Best referable-DR result | RETFound-Green native-392 + multi-task head: AUROC 0.985 [0.964-0.997] |
+| Deployment model | RETFound-Green native-392 + locked multi-task head |
 
-## Current Development Status
+## What Is Implemented
 
-Architecture: finalized
-Implementation status: Stage 7 complete - ODIR real-dataset smoke accepted
-Current stage: Stage 7.5 documentation update finalized; next implementation stage is Stage 8A real backbone integration.
+The paper-facing system is focused on the work that was actually completed and evaluated:
 
-First MVP target:
+- BRSET ingestion through a dataset adapter and canonical sample schema.
+- Patient-level splitting with explicit zero-overlap auditing.
+- Deterministic matched-224 preprocessing for all backbones.
+- Native-392 RETFound-Green extraction as a controlled protocol comparison.
+- Frozen feature extraction for supervised CNNs, general self-supervised ViTs, and a retina-specific self-supervised model.
+- Reusable embedding caches with manifests, preprocessing identity, and extraction provenance.
+- A per-task linear probe and a shared multi-task prediction head.
+- Task-masked losses for incomplete labels.
+- AdamW training, warmup, cosine scheduling, gradient clipping, validation-based early stopping, and best-checkpoint restoration.
+- Held-out test evaluation for referable DR, six binary conditions, and 5-class DR grading.
+- Patient-clustered bootstrap confidence intervals and paired delta testing.
+- A hosted single-image research demonstrator using the empirically selected parameter-efficient model.
 
-DummyAdapter
-→ canonical schema
-→ patient-level split
-→ mock embeddings
-→ dataloader
-→ feature policy
-→ task masks
-→ multi-task model
-→ masked loss
-→ evaluation smoke test
+Earlier plans for external validation, fairness mitigation, continual learning, OOD gating, online updating, and saliency-based explainability are **not part of the reported study and are not claimed here**.
 
-Real datasets and real foundation backbones should be added only after the dummy path works.
+## Experimental Pipeline
+<img width="1349" height="614" alt="image" src="https://github.com/user-attachments/assets/9e692d8a-afaf-49a7-9b58-c46c5e2aa35b" />
 
-## Architecture Summary
+## Compared Representations
 
-The codebase follows a modular monolith design under:
+Seven backbone/protocol rows were evaluated. RETFound-Green appears twice because matched and native extraction were treated as an explicit experimental axis.
 
-src/retina_screen/
+| Family | Backbone | Protocol | Embedding dimension |
+|---|---|---:|---:|
+| Supervised CNN | ResNet-50 | 224 matched | 2,048 |
+| Supervised CNN | ConvNeXt-Base | 224 matched | 1,024 |
+| General SSL ViT | DINOv2-Base | 224 matched | 768 |
+| General SSL ViT | DINOv2-Large | 224 matched | 1,024 |
+| General SSL ViT | DINOv3-Large | 224 matched | 1,024 |
+| Retina-specific SSL ViT | RETFound-Green | 224 matched | 384 |
+| Retina-specific SSL ViT | RETFound-Green | 392 native | 384 |
 
-Main layers:
+All backbone parameters remained frozen. Only the downstream prediction heads were trained.
 
-Dataset Adapter
-→ Canonical Schema
-→ Patient-Level Split
-→ Preprocessing
-→ Frozen Backbone Embeddings
-→ Embedding Cache
-→ Data Loader + FeaturePolicy + Task Masks
-→ Multi-Task Head
-→ Training Loop
-→ Evaluation / Fairness / Reliability
-→ Continual Learning / Explainability / Dashboard / Reporting
+### Prediction heads
 
-Dataset-specific logic is allowed only inside adapters and configuration files. Downstream modules must consume canonical schema fields, task registry definitions, feature-policy outputs, and config-driven behavior.
+**Linear probe (LP)**
 
-## Repository Structure
+A single linear layer is fitted per task on top of the frozen embedding. This measures the direct linear separability of each representation.
 
-retinal_fundus_to_systemic_screening/
-│
-├── configs/ # YAML experiment, dataset, model, training, OOD, and evaluation configs
-├── docs/ # project specification, guardrails, decisions, architecture, and AI context docs
-├── src/retina_screen/ # main Python package
-├── scripts/ # thin CLI entrypoints
-├── tests/ # unit and architecture-validity tests
-├── data/ # local datasets, gitignored
-├── cache/ # embeddings and cache artifacts, gitignored
-├── runs/ # training runs and checkpoints, gitignored
-├── registry/ # small model/version metadata
-└── outputs/ # generated metrics, tables, plots, and paper outputs
+**Multi-task head (MT)**
 
-## Core Design Rules
+A shared nonlinear trunk is trained jointly across the available tasks, followed by task-specific output layers. Cross-entropy is used for 5-class DR grading, binary cross-entropy is used for the six binary conditions, and per-task losses are combined with Kendall uncertainty weighting.
 
-The most important rules are:
+## Endpoints
 
-1. Dataset-specific logic belongs only in `src/retina_screen/adapters/*` and config files.
-2. All downstream code must use the canonical schema.
-3. Splitting must be patient-level, never image-level.
-4. The default split is `train / validation / reliability / test = 60 / 15 / 15 / 10`.
-5. Missing labels must use task masks and must never be treated as negative labels.
-6. Metadata must pass through `FeaturePolicy` before reaching the model.
-7. Foundation backbones are frozen by default.
-8. ODIR-only experiments must not be framed as definitive systemic disease prediction.
-9. The dashboard is inference-only and must not retrain from user uploads.
-10. Evaluation must handle sparse/single-class subgroups safely.
+### Primary endpoint: referable DR
 
-For complete rules, see:
+The model predicts a five-class DR distribution. The referable-DR score is computed as:
 
-docs/ai_context/
-docs/architecture.md
-docs/decisions.md
-PROTECTED_FILES.md
-AGENTS.md
+```text
+P(referable DR) = P(grade 2) + P(grade 3) + P(grade 4)
+```
 
-## Setup
+This directly represents the study's triage question: whether an image crosses the moderate-or-worse referral boundary.
 
-Create and activate an environment, then install the package in editable mode.
+### Multi-condition panel
 
-### Using pip
+The secondary binary panel contains:
+
+- macular edema,
+- hypertensive retinopathy,
+- age-related macular degeneration (AMD),
+- drusen,
+- other ocular findings,
+- diabetes as a record-derived proxy label.
+
+The six-task macro-AUROC excludes the five-class DR output. Hypertensive retinopathy is an ophthalmological grading, not a systemic blood-pressure measurement, and the diabetes flag is treated as a screening proxy rather than a diagnosis from the image alone.
+
+## Training and Evaluation Protocol
+
+A single pre-specified recipe was applied across all 14 cells:
+
+| Setting | Value |
+|---|---:|
+| Optimizer | AdamW |
+| Learning rate | 1e-4 |
+| Weight decay | 0.01 |
+| Batch size | 256 |
+| Warmup | 5 epochs |
+| Scheduler | Cosine annealing |
+| Maximum epochs | 100 |
+| Early-stopping patience | 10 |
+| Gradient clipping | 1.0 |
+| Checkpoint criterion | Validation six-task macro-AUROC |
+| Random seed | 42 |
+| Class weighting in primary matrix | Disabled |
+| Backbone fine-tuning | Disabled |
+
+The validation split was used for model selection. The reliability split was held out for work outside the reported paper. Final metrics were calculated once on the untouched test partition.
+
+For uncertainty estimation, all images belonging to the same patient were resampled together. Each metric used 2,000 patient-clustered bootstrap replicates, with the 2.5th and 97.5th percentiles reported as the 95% confidence interval.
+
+## Main Results
+
+### Complete backbone x head matrix
+
+| Backbone and protocol | Referable-DR AUROC, MT | Referable-DR AUROC, LP | Six-task macro-AUROC, MT | Six-task macro-AUROC, LP | 5-class balanced accuracy, MT | 5-class balanced accuracy, LP |
+|---|---:|---:|---:|---:|---:|---:|
+| ResNet-50, 224 | 0.942 [0.901-0.974] | 0.920 [0.885-0.949] | 0.818 [0.790-0.845] | 0.774 [0.742-0.804] | 0.384 | 0.239 |
+| ConvNeXt-Base, 224 | 0.975 [0.954-0.989] | 0.943 [0.913-0.969] | 0.846 [0.821-0.871] | 0.800 [0.771-0.829] | 0.400 | 0.307 |
+| DINOv2-Base, 224 | 0.973 [0.951-0.989] | 0.958 [0.931-0.981] | 0.874 [0.855-0.892] | 0.851 [0.830-0.871] | 0.436 | 0.418 |
+| DINOv2-Large, 224 | 0.979 [0.956-0.993] | 0.974 [0.958-0.987] | 0.880 [0.854-0.904] | 0.847 [0.819-0.875] | 0.474 | 0.423 |
+| RETFound-Green, 224 matched | 0.978 [0.959-0.991] | 0.968 [0.950-0.984] | 0.843 PE | 0.806 PE | 0.399 | 0.355 |
+| DINOv3-Large, 224 | 0.977 [0.956-0.993] | 0.962 [0.938-0.980] | 0.875 PE | 0.829 PE | 0.419 | 0.347 |
+| RETFound-Green, 392 native | **0.985 [0.964-0.997]** | 0.968 [0.951-0.982] | 0.875 PE | 0.819 PE | 0.463 | 0.332 |
+
+`PE` indicates a point estimate where the final manuscript does not report a confidence interval for that macro-AUROC cell.
+
+### Primary Referable-DR performance across the matrix
+<img width="1082" height="568" alt="image" src="https://github.com/user-attachments/assets/cde9bd43-f705-4d6a-ba5b-95ef18d770f1" />
+
+
+### Findings supported by the comparison
+
+1. **The largest model was not automatically the best deployment choice.** RETFound-Green native-392 used approximately 22M parameters and 384-dimensional embeddings, yet its referable-DR result was not separable from DINOv2-Large or DINOv3-Large. It had a supported +0.012 AUROC advantage over DINOv2-Base.
+
+2. **Pretraining paradigm mattered more than within-family scaling for the reported macro endpoint.** ConvNeXt-Base to DINOv2-Base improved macro-AUROC by +0.029 [0.010-0.049], while DINOv2-Base to DINOv2-Large added +0.006 [-0.015-0.025] and was not separable.
+
+3. **The multi-task head improved the six-task panel.** MT exceeded LP in every row. For the four backbones with paired macro-AUROC intervals, the gains were supported and ranged from +0.024 to +0.046.
+
+4. **The head benefit was concentrated on sparse targets.** The largest gains appeared on AMD, the rarest binary condition: +0.131 [0.057-0.215] for ResNet-50 and +0.109 [0.015-0.212] for DINOv2-Large.
+
+5. **Extraction protocol was a real performance variable.** Moving RETFound-Green from matched-224 to native-392 changed the six-task macro-AUROC by +0.032 in point estimates. The referable-DR AUROC difference was not separable, but referable-DR AUPRC improved by +0.048 [0.003-0.096].
+
+6. **Binary triage was substantially more reliable than fine-grained grading.** Referable-DR discrimination was strong, while five-class balanced accuracy remained limited because grade 0 represented 93.5% of the test images and mild/moderate grades were extremely sparse.
+
+## FROST Research Demonstrator
+
+The hosted FROST demonstrator uses the deployment choice supported by the comparison:
+
+```text
+Uploaded fundus image
+    -> native 392 preprocessing
+    -> frozen RETFound-Green backbone
+    -> 384-dimensional embedding
+    -> locked multi-task head
+    -> DR grade probability distribution
+    -> probability mass on grades 2, 3, and 4
+    -> validation-selected threshold
+    -> research triage result
+```
+
+The interface:
+
+- accepts a professionally acquired JPEG or PNG fundus image,
+- processes the image in memory,
+- displays image and preprocessing information,
+- reports the referable-DR research score and fixed threshold,
+- visualizes the five DR-grade outputs,
+- shows the exact inference sequence used to produce the triage decision,
+- runs on commodity CPU hardware in under one second after model loading.
+
+The fixed validation-selected threshold is approximately `0.0444`. At this operating point, the reported sensitivity was `0.973` and specificity was `0.953` on the study's internal BRSET evaluation. The displayed score is an operating-point triage score, not a calibrated probability.
+
+The hosted interface is a companion deployment artifact. The reproduction workflow below covers the research repository's feature-extraction, training, and evaluation pipeline.
+
+<img width="1160" height="810" alt="image" src="https://github.com/user-attachments/assets/5b5cfc98-1bc8-47c7-8231-b6299ba734fa" />
+
+<img width="1132" height="679" alt="image" src="https://github.com/user-attachments/assets/2b0391e4-1ded-47ab-97d8-8caeaea89ff2" />
+
+<img width="294" height="244" alt="image" src="https://github.com/user-attachments/assets/97486bbd-9056-4569-81e8-44c4711df09d" />
+
+
+
+## Engineering Design
+
+The repository uses a config-driven modular architecture rather than notebook-only experiments.
+
+Key engineering properties include:
+
+- dataset-specific parsing isolated behind adapters,
+- canonical downstream sample and task contracts,
+- patient-leakage checks before training,
+- deterministic backbone-specific preprocessing,
+- one-image backbone verification before full extraction,
+- frozen model loading with explicit embedding-dimension validation,
+- cache namespaces keyed by backbone, dataset, and preprocessing identity,
+- embedding manifests and extraction provenance,
+- reusable caches shared by MT and LP runs,
+- task masks for missing labels,
+- resolved configuration and run metadata saved with each training run,
+- best-validation and last-epoch checkpoints stored separately,
+- head-type-safe checkpoint reconstruction during evaluation,
+- sparse and single-class metric safeguards,
+- machine-readable JSON evaluation artifacts,
+- unit, integration, and architecture-boundary tests.
+
+## Installation
+
+FROST supports Python 3.10-3.12.
+
+```bash
+git clone https://github.com/Solace985/FROST.git
+cd FROST
 
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-pip install -e .
+```
 
-On Linux/macOS:
+Activate the environment:
 
-python -m venv .venv
+```bash
+# Linux/macOS
 source .venv/bin/activate
+```
+
+```powershell
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+Install the research dependencies:
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install -e .
+```
 
-### Using conda
+The current `requirements.txt` installs the package in editable mode with the development, PyTorch, and visualization extras.
 
-conda env create -f environment.yml
-conda activate retinal-screening
-pip install -e .
+## BRSET Data Setup
 
-## Running Tests
+BRSET is distributed through PhysioNet under credentialed access and is not included in this repository:
 
-Run the full test suite:
+[BRSET v1.0.1 on PhysioNet](https://physionet.org/content/brazilian-ophthalmological/1.0.1/)
 
+Keep raw images, metadata, split manifests containing identifiers, embedding caches, checkpoints, and generated run artifacts outside version control.
+
+Configure the local dataset root using the project configuration or environment variable:
+
+```bash
+# Linux/macOS
+export RETINA_SCREEN_BRSET_ROOT=/absolute/path/to/brset
+```
+
+```powershell
+# Windows PowerShell
+$env:RETINA_SCREEN_BRSET_ROOT = "C:\path\to\brset"
+```
+
+## Running the Research Pipeline
+
+Experiment behavior is controlled through YAML files in `configs/`. Use the exact paper-facing configuration for the backbone, protocol, and head being reproduced.
+
+### 1. Run the test suite
+
+```bash
 pytest
+```
 
-Run architecture/static checks:
+### 2. Create or verify the patient-level split
 
-pytest tests/test_no_dataset_coupling.py tests/test_import_boundaries.py
+```bash
+python scripts/01_make_splits.py --config <experiment-config.yaml>
+```
 
-Run core contract tests:
+### 3. Verify one image through the selected backbone
 
-pytest tests/test_schema_tasks_policy.py tests/test_feature_policy.py
+```bash
+python scripts/02_verify_backbone_one_image.py --config <experiment-config.yaml>
+```
 
-## MVP Execution Order
+This gate verifies model loading, preprocessing, frozen status, output dimension, and cache compatibility before full extraction.
 
-Implementation should follow the order defined in:
+### 4. Extract and cache embeddings
 
-docs/ai_context/03_file_generation_order.md
+```bash
+python scripts/03_extract_embeddings.py --config <experiment-config.yaml>
+```
 
-High-level order:
+### 5. Train the selected head
 
-1. Core contracts
-2. Base adapter + DummyAdapter
-3. Patient-level split and data layer
-4. Dummy model/training/evaluation MVP
-5. Preprocessing and embedding cache
-6. ODIR real-dataset engineering smoke
-7. Real foundation backbone integration
-8. BRSET/mBRSET and external-dataset integration stages
-9. Fairness, continual learning, explainability, reporting, and dashboard
+```bash
+python scripts/04_train.py --config <experiment-config.yaml>
+```
 
-Detailed post-Stage-7 planning is maintained in `docs/mvp_build_order.md`.
+### 6. Evaluate the best-validation checkpoint
 
-## Planned CLI Scripts
+```bash
+python scripts/05_evaluate.py \
+  --config <experiment-config.yaml> \
+  --run-dir runs/train/<run-id>
+```
 
-The scripts are thin entrypoints. Real logic belongs in `src/retina_screen/`.
+The two head types for a backbone must resolve to the same embedding cache when their backbone and preprocessing protocol are identical.
 
-scripts/00_smoke_dummy.py
-scripts/01_make_splits.py
-scripts/02_verify_backbone_one_image.py
-scripts/03_extract_embeddings.py
-scripts/04_train.py
-scripts/05_evaluate.py
-scripts/06_run_continual.py
-scripts/07_generate_paper_outputs.py
-scripts/08_launch_dashboard.py
+## Generated Artifacts
 
-Example future usage:
+A complete run produces machine-readable provenance and evaluation outputs similar to:
 
-python scripts/00_smoke_dummy.py
-python scripts/04_train.py --config configs/experiment/baseline_odir_retfound.yaml
-python scripts/05_evaluate.py --config configs/experiment/baseline_odir_retfound.yaml
+```text
+cache/embeddings/<backbone>/<dataset>/<preprocessing-hash>/
+  manifest.csv
+  cache_provenance.json
+  <sample-id>.pt
 
-## Dataset Notes
+runs/train/<run-id>/
+  resolved_config.yaml
+  run_metadata.json
+  train_log.csv
+  model_checkpoint.pt
+  model_last.pt
 
-The architecture is built to support multiple retinal datasets through adapters.
+outputs/evaluation/<evaluation-id>/
+  evaluation_summary.json
+  overall_metrics.json
+  subgroup_metrics.json
+  diagnostics.json
+```
 
-Initial datasets:
+Generated data and model artifacts are intentionally excluded from Git.
 
-- `DummyAdapter` for smoke testing.
-- `ODIRAdapter` for the Stage 7 real-dataset engineering smoke and auxiliary ocular benchmarking.
-- `external_dr.py` for DR-focused external validation datasets.
-- `RFMiDAdapter` for concept directions and secondary ocular validation.
-- `BRSETAdapter` and `mBRSETAdapter` as future integrations after local preflight,
-  adapter implementation, and evaluation.
+## Scope and Limitations
 
-Dataset files should be placed under `data/`, which is intentionally gitignored.
+- The reported benchmark is an internal BRSET evaluation; no external population or cross-device validation is claimed.
+- The matrix uses one fixed random seed and one shared training recipe to isolate representation and head effects.
+- The test set contains only 73 referable-DR images, and several secondary conditions contain fewer than 35 positives.
+- Patient-clustered confidence intervals reduce false precision but do not remove uncertainty caused by sparse outcomes.
+- The primary matrix does not use class weighting, oversampling, focal loss, or threshold tuning per backbone.
+- Fine-grained five-class DR grading remains weak under the highly imbalanced class distribution.
+- The FROST demonstrator is intended for professionally acquired fundus photographs and has only been validated on the internal BRSET distribution.
+- Demonstrator output must not be interpreted as a diagnosis or as a calibrated probability of disease.
 
-## Research-Framing Notes
+## Citation
 
-In ODIR-only mode, diabetes and hypertension labels are treated as weak proxy labels, not definitive structured systemic diagnoses.
-
-The ODIR-only paper framing should emphasize:
-
-multi-condition retinal screening
-
-- fairness auditing
-- cross-site robustness
-- continual-learning simulation
-
-rather than strong whole-body/systemic disease prediction.
-
-Stronger systemic-proxy framing becomes possible only after BRSET/mBRSET local
-preflight, adapter implementation, evaluation, and claim review.
-
-## For Coding Agents
-
-Coding agents must read:
-AGENTS.md
-PROTECTED_FILES.md
-docs/ai_context/
-docs/architecture.md
-docs/decisions.md
-
-Do not redesign the architecture.
-Do not modify protected files unless explicitly instructed.
-Do not add dataset-specific logic outside adapters/configs/docs/tests.
-Build MVP-first and run tests after each stage.
+```bibtex
+@misc{chauhan2026frost,
+  title  = {FROST: Frozen Representations for Ocular Screening and Triage in Referable Diabetic Retinopathy},
+  author = {Chauhan, Ritu},
+  year   = {2026},
+  note   = {Research manuscript and software repository}
+}
+```
 
 ## License
 
-License to be decided before public release.
+A project license has not yet been specified. Add a `LICENSE` file before redistribution or reuse outside the terms explicitly granted by the repository owner and upstream model/dataset providers.
