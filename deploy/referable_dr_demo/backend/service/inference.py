@@ -1,19 +1,3 @@
-"""inference.py -- load-once frozen inference service for FROST.
-
-Reproduces the accepted RETFound-Green native-392 + MultiTaskHead pipeline
-exactly, using the canonical pipeline modules as read-only libraries:
-
-  preprocess_image(mode="extract")  [preprocessing_parity]
-    -> load_backbone(native-392)    [retina_screen.embeddings]
-    -> build_head + load_state_dict [retina_screen.model]
-    -> compute_referable_dr_score   [retina_screen.evaluation.referable_dr]
-
-The backbone and head are loaded exactly once per process, set to eval mode,
-frozen (requires_grad=False), and a single synthetic warm-up inference is run.
-Every inference call runs under ``torch.inference_mode()``. No optimizer,
-scheduler, trainer, gradient graph, or backward call is ever created.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -68,7 +52,6 @@ class InferenceService:
         self.device = torch.device(device)
         self._load_count = 0
 
-        # --- backbone (load once, frozen, eval) ---
         cfg = BackboneConfig(**bundle.backbone_config_kwargs())
         self.backbone = load_backbone(cfg, self.device)
         self.backbone.eval()
@@ -77,7 +60,6 @@ class InferenceService:
         if any(p.requires_grad for p in self.backbone.parameters()):
             raise RuntimeError("Backbone is not fully frozen after load.")
 
-        # --- head (load once, strict, eval, frozen for inference) ---
         state = torch.load(
             bundle.head_checkpoint, map_location=self.device, weights_only=True
         )
@@ -86,7 +68,7 @@ class InferenceService:
             task_names=list(bundle.task_order),
             head_type="multitask",
         )
-        self.head.load_state_dict(state)  # strict=True
+        self.head.load_state_dict(state)
         self.head.eval()
         for p in self.head.parameters():
             p.requires_grad_(False)
@@ -95,19 +77,16 @@ class InferenceService:
         self.dr_grade_key = bundle.manifest["dr_grade_task_key"]
         self._load_count += 1
 
-        # --- single non-persistent synthetic warm-up ---
         self._warmup()
         logger.info(
             "InferenceService ready (backbone=%s, embedding_dim=%d, device=%s).",
             cfg.name, bundle.embedding_dim, self.device,
         )
 
-    # ------------------------------------------------------------------
     def _warmup(self) -> None:
         synthetic = Image.new("RGB", (512, 512), color=(127, 127, 127))
         _ = self.infer(synthetic)
 
-    # ------------------------------------------------------------------
     def embed(self, image: Image.Image) -> np.ndarray:
         """Return the frozen 384-d embedding for one image (float32, shape (384,)).
 
@@ -119,30 +98,29 @@ class InferenceService:
             emb = self.backbone(tensor).squeeze(0)
         return emb.detach().cpu().numpy().astype(np.float32)
 
-    # ------------------------------------------------------------------
     def infer(self, image: Image.Image) -> InferenceResult:
         """Full referable-DR inference for one PIL image."""
         timings: dict[str, float] = {}
 
         t0 = time.perf_counter()
-        tensor = preprocessing_parity.preprocess(image).to(self.device)  # (1,3,392,392)
+        tensor = preprocessing_parity.preprocess(image).to(self.device)
         timings["preprocessing"] = (time.perf_counter() - t0) * 1000.0
 
         t0 = time.perf_counter()
         with torch.inference_mode():
-            embedding = self.backbone(tensor)  # (1, 384)
+            embedding = self.backbone(tensor)
         timings["backbone"] = (time.perf_counter() - t0) * 1000.0
 
         t0 = time.perf_counter()
         with torch.inference_mode():
             outputs = self.head(embedding)
-            dr_logits = outputs[self.dr_grade_key]  # (1, 5)
+            dr_logits = outputs[self.dr_grade_key]
         timings["head"] = (time.perf_counter() - t0) * 1000.0
 
         t0 = time.perf_counter()
-        dr_logits_np = dr_logits.detach().cpu().numpy().astype(np.float64)  # (1,5)
+        dr_logits_np = dr_logits.detach().cpu().numpy().astype(np.float64)
         score = float(referable_dr_score(dr_logits_np)[0])
-        probs = _softmax_rows(dr_logits_np)[0]  # (5,)
+        probs = _softmax_rows(dr_logits_np)[0]
         timings["postprocessing"] = (time.perf_counter() - t0) * 1000.0
 
         emb_dim = int(embedding.shape[-1])
@@ -174,9 +152,6 @@ def _softmax_rows(logits_2d: np.ndarray) -> np.ndarray:
     return exp_s / exp_s.sum(axis=1, keepdims=True)
 
 
-# --------------------------------------------------------------------------
-# Process-wide singleton
-# --------------------------------------------------------------------------
 _SERVICE: InferenceService | None = None
 
 

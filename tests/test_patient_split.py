@@ -95,8 +95,6 @@ def test_extra_ratio_key_raises(dummy_manifest):
         split_patients(dummy_manifest, ratios=bad)
 
 def test_blank_patient_id_raises_value_error():
-    # Schema now validates patient_id is non-blank, so we use model_construct
-    # to bypass schema validation and test split_patients' own guard.
     manifest = _tiny(5)
     broken = CanonicalSample.model_construct(
         sample_id="bad", patient_id="   ",

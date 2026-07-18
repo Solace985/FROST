@@ -1,17 +1,3 @@
-"""
-splitting.py -- Patient-level deterministic splitting for the retinal screening pipeline.
-
-Owns: patient-level split logic, 60/15/15/10 default ratios, split audit, overlap
-detection, and split file writing.
-
-Must not contain: image-level splitting, dataset-specific logic, model code, or
-ODIR/BRSET/mBRSET conditionals.
-
-Critical invariant: every sample from the same patient must appear in exactly one
-split. Any patient overlap between train/val/reliability/test silently inflates
-evaluation metrics and invalidates research claims.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -28,9 +14,6 @@ from retina_screen.schema import CanonicalSample
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 RATIO_TOLERANCE: float = 1e-6
 
@@ -55,9 +38,6 @@ DEFAULT_SPLIT_RATIOS: dict[str, float] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Audit dataclass
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -72,20 +52,17 @@ class SplitAudit:
     patient_counts: dict[str, int]
     total_samples: int
     total_patients: int
-    overlap_pairs: dict[str, list[str]]           # "train/val" -> [patient_ids]
-    duplicate_assignments: list[str]              # sample_ids assigned to > 1 split
-    duplicate_within_splits: dict[str, list[str]] # split_name -> [dup sample_ids]
-    missing_sample_ids: list[str]                 # in manifest but unassigned
-    ghost_sample_ids: list[str]                   # assigned but not in manifest
-    unknown_split_names: list[str]                # not in SplitName enum
-    missing_split_names: list[str]                # required SplitName values absent
+    overlap_pairs: dict[str, list[str]]
+    duplicate_assignments: list[str]
+    duplicate_within_splits: dict[str, list[str]]
+    missing_sample_ids: list[str]
+    ghost_sample_ids: list[str]
+    unknown_split_names: list[str]
+    missing_split_names: list[str]
     valid: bool
     message: str
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def split_patients(
@@ -127,8 +104,6 @@ def split_patients(
     """
     schema_fields = set(CanonicalSample.model_fields.keys())
 
-    # Stage 4 is patient-level only. Do not permit sample_id/image_path or any
-    # other field to become the grouping key.
     if group_on != "patient_id":
         raise ValueError(
             f"Stage 4 supports patient-level splitting only; group_on must be "
@@ -145,8 +120,6 @@ def split_patients(
             f"Valid fields: {sorted(schema_fields)}"
         )
 
-    # Normalize and validate ratios.
-    # Use .value for enum keys (str(SplitName.TRAIN) gives "SplitName.TRAIN" in Python 3.12).
     def _key(k: object) -> str:
         return k.value if hasattr(k, "value") else str(k)
 
@@ -175,7 +148,6 @@ def split_patients(
     if not manifest:
         raise ValueError("Manifest is empty; cannot split.")
 
-    # Validate group_on values
     for s in manifest:
         pid = getattr(s, group_on)
         if pid is None or (isinstance(pid, str) and not pid.strip()):
@@ -184,7 +156,6 @@ def split_patients(
                 f"All samples must have a non-empty group key."
             )
 
-    # Build patient -> samples mapping
     patient_to_samples: dict[str, list[str]] = defaultdict(list)
     for s in manifest:
         pid = str(getattr(s, group_on))
@@ -193,10 +164,8 @@ def split_patients(
     unique_patients = sorted(patient_to_samples.keys())
     n_patients = len(unique_patients)
 
-    # Compute per-split patient counts
     counts = _compute_patient_counts(n_patients, effective_ratios)
 
-    # Shuffle patients deterministically
     rng = _random.Random(seed)
     if stratify_on is not None:
         patients_ordered = _stratified_shuffle(
@@ -206,7 +175,6 @@ def split_patients(
         patients_ordered = list(unique_patients)
         rng.shuffle(patients_ordered)
 
-    # Assign patients to splits in canonical order
     ordered_splits = list(_SPLIT_ORDER)
     split_dict: dict[str, list[str]] = {}
     idx = 0
@@ -219,7 +187,6 @@ def split_patients(
             sample_ids.extend(patient_to_samples[pid])
         split_dict[split_name] = sample_ids
 
-    # Log summary
     for split_name in ordered_splits:
         sids = split_dict[split_name]
         assigned_pids = {
@@ -267,7 +234,6 @@ def audit_split(
     patient_counts: dict[str, int] = {name: 0 for name in _SPLIT_ORDER}
     split_patient_sets: dict[str, set[str]] = {name: set() for name in _SPLIT_ORDER}
 
-    # Track all assignments for cross-split duplicate detection
     global_assignment_count: Counter[str] = Counter()
     for split_name, sids in split_dict.items():
         sample_counts[split_name] = len(sids)
@@ -278,12 +244,10 @@ def audit_split(
         patient_counts[split_name] = len(pids)
         split_patient_sets[split_name] = pids
 
-    # Cross-split duplicates (same sample_id in > 1 split)
     duplicate_assignments = sorted(
         sid for sid, cnt in global_assignment_count.items() if cnt > 1
     )
 
-    # Within-split duplicates
     duplicate_within_splits: dict[str, list[str]] = {}
     for split_name, sids in split_dict.items():
         within_count = Counter(sids)
@@ -291,14 +255,11 @@ def audit_split(
         if dups:
             duplicate_within_splits[split_name] = dups
 
-    # Ghost IDs: in split but not in manifest
     all_assigned: set[str] = set(global_assignment_count.keys())
     ghost_sample_ids = sorted(all_assigned - manifest_ids)
 
-    # Missing IDs: in manifest but not assigned to any split
     missing_sample_ids = sorted(manifest_ids - all_assigned)
 
-    # Patient overlap across all six split pairs
     _PAIRS = (
         ("train", "val"),
         ("train", "reliability"),
@@ -315,7 +276,6 @@ def audit_split(
         if common:
             overlap_pairs[f"{a}/{b}"] = common
 
-    # Build validity
     issues: list[str] = []
     if overlap_pairs:
         for pair, pids in overlap_pairs.items():
@@ -405,7 +365,6 @@ def write_split(
 
     sid_to_sample: dict[str, CanonicalSample] = {s.sample_id: s for s in manifest}
 
-    # splits.csv — rows ordered by canonical split order then sample_id
     csv_path = out / "splits.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(
@@ -423,7 +382,6 @@ def write_split(
                     }
                 )
 
-    # split_audit.json
     audit = audit_split(split_dict, manifest)
     audit_path = out / "split_audit.json"
     with audit_path.open("w", encoding="utf-8") as fh:
@@ -433,9 +391,6 @@ def write_split(
     return {"csv": csv_path, "audit": audit_path}
 
 
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _compute_patient_counts(
@@ -447,14 +402,13 @@ def _compute_patient_counts(
     The last split in canonical order absorbs any rounding remainder.
     Raises ValueError if any split would receive 0 patients.
     """
-    # Canonical ordering: _SPLIT_ORDER first, then any extras
     ordered = [s for s in _SPLIT_ORDER if s in ratios]
     ordered += [s for s in sorted(ratios.keys()) if s not in ordered]
 
     counts: dict[str, int] = {}
     remaining = n_total
     for name in ordered[:-1]:
-        c = int(ratios[name] * n_total)  # floor
+        c = int(ratios[name] * n_total)
         counts[name] = c
         remaining -= c
     counts[ordered[-1]] = remaining

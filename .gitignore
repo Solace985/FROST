@@ -35,3 +35,14 @@ Thumbs.db
 *.tmp
 
 models/
+
+# --- Agent / tooling scaffolding: kept on local disk, excluded from the repo ---
+CLAUDE.md
+AGENTS.md
+PROTECTED_FILES.md
+.claude/
+docs/ai_context/
+
+# Experimental duplicate + working logs (not part of the main codebase)
+deploy2/
+deploy/referable_dr_demo/graphical_changes.md

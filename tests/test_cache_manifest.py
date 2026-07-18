@@ -1,28 +1,3 @@
-"""
-test_cache_manifest.py -- Tier 6 architecture-enforcement tests for the
-embedding cache and manifest system.
-
-Verifies:
-- save/load round-trip correctness
-- checksum computation and sensitivity
-- CacheMissError on absent files
-- CacheCorruptError on checksum mismatch and wrong dim
-- manifest schema completeness and round-trip
-- preprocessing hash stability and sensitivity
-- cache directory structure
-- extract_embeddings integration (mock backbone, synthetic samples)
-- overwrite=False / overwrite=True cache behaviour
-- MockBackbone determinism and frozen parameters
-- verify_cache_integrity detection of missing/corrupt files
-- load_backbone factory for mock and real backbone guard
-- preprocess_image output shape and dtype
-- extract mode determinism (no random transforms regardless of config)
-- manifest purity (no checksum='error' entries)
-
-All tests use synthetic torch tensors and tmp_path.
-No real images, no real backbones, no internet access required.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -60,9 +35,6 @@ from retina_screen.preprocessing import (
 from retina_screen.schema import CanonicalSample
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_sample(
@@ -102,9 +74,6 @@ def _load_extract_embeddings_script_module():
     return module
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -128,9 +97,6 @@ def prep_config() -> PreprocessingConfig:
     return _make_prep_config()
 
 
-# ---------------------------------------------------------------------------
-# 1. save + reload returns identical tensor
-# ---------------------------------------------------------------------------
 
 
 def test_save_load_round_trip(tmp_path: Path, sample_tensor: torch.Tensor, embedding_dim: int) -> None:
@@ -141,9 +107,6 @@ def test_save_load_round_trip(tmp_path: Path, sample_tensor: torch.Tensor, embed
     )
 
 
-# ---------------------------------------------------------------------------
-# 2. checksum is reproducible
-# ---------------------------------------------------------------------------
 
 
 def test_checksum_reproducible(sample_tensor: torch.Tensor) -> None:
@@ -152,9 +115,6 @@ def test_checksum_reproducible(sample_tensor: torch.Tensor) -> None:
     assert c1 == c2, "Checksum is not reproducible for the same tensor"
 
 
-# ---------------------------------------------------------------------------
-# 3. different tensor → different checksum
-# ---------------------------------------------------------------------------
 
 
 def test_checksum_sensitivity(sample_tensor: torch.Tensor, embedding_dim: int) -> None:
@@ -165,9 +125,6 @@ def test_checksum_sensitivity(sample_tensor: torch.Tensor, embedding_dim: int) -
     )
 
 
-# ---------------------------------------------------------------------------
-# 4. missing file → CacheMissError
-# ---------------------------------------------------------------------------
 
 
 def test_missing_file_raises_cache_miss(tmp_path: Path, embedding_dim: int) -> None:
@@ -176,9 +133,6 @@ def test_missing_file_raises_cache_miss(tmp_path: Path, embedding_dim: int) -> N
         load_embedding(fake_path, "aabbcc" * 10, embedding_dim)
 
 
-# ---------------------------------------------------------------------------
-# 5. checksum mismatch → CacheCorruptError
-# ---------------------------------------------------------------------------
 
 
 def test_checksum_mismatch_raises_cache_corrupt(
@@ -190,9 +144,6 @@ def test_checksum_mismatch_raises_cache_corrupt(
         load_embedding(path, wrong_checksum, embedding_dim)
 
 
-# ---------------------------------------------------------------------------
-# 6. wrong embedding dim → CacheCorruptError
-# ---------------------------------------------------------------------------
 
 
 def test_wrong_dim_raises_cache_corrupt(tmp_path: Path, sample_tensor: torch.Tensor) -> None:
@@ -223,9 +174,6 @@ def test_load_embedding_rejects_batch_shaped_tensor_with_matching_last_dim(
         load_embedding(path, checksum, expected_dim=embedding_dim)
 
 
-# ---------------------------------------------------------------------------
-# 7. manifest written with all required columns
-# ---------------------------------------------------------------------------
 
 
 def test_manifest_has_required_columns(tmp_path: Path) -> None:
@@ -252,9 +200,6 @@ def test_manifest_has_required_columns(tmp_path: Path) -> None:
     assert not missing, f"Manifest is missing required columns: {missing}"
 
 
-# ---------------------------------------------------------------------------
-# 8. manifest round-trips via load_embedding_manifest
-# ---------------------------------------------------------------------------
 
 
 def test_manifest_round_trip(tmp_path: Path) -> None:
@@ -279,9 +224,6 @@ def test_manifest_round_trip(tmp_path: Path) -> None:
     assert loaded[0]["backbone_name"] == "mock"
 
 
-# ---------------------------------------------------------------------------
-# 9. preprocessing hash is stable (same config → same hash)
-# ---------------------------------------------------------------------------
 
 
 def test_preprocessing_hash_stable() -> None:
@@ -291,9 +233,6 @@ def test_preprocessing_hash_stable() -> None:
     assert h1 == h2, "Preprocessing hash is not stable for the same config"
 
 
-# ---------------------------------------------------------------------------
-# 10. different PreprocessingConfig → different hash
-# ---------------------------------------------------------------------------
 
 
 def test_preprocessing_hash_sensitivity() -> None:
@@ -304,9 +243,6 @@ def test_preprocessing_hash_sensitivity() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 11. get_cache_dir returns backbone/dataset/hash structure
-# ---------------------------------------------------------------------------
 
 
 def test_cache_dir_structure(tmp_path: Path) -> None:
@@ -321,9 +257,6 @@ def test_cache_dir_structure(tmp_path: Path) -> None:
     assert cache_dir.is_dir(), "Cache directory was not created"
 
 
-# ---------------------------------------------------------------------------
-# 12. extract_embeddings integration
-# ---------------------------------------------------------------------------
 
 
 def test_extract_embeddings_integration(
@@ -357,9 +290,6 @@ def test_extract_embeddings_integration(
         assert int(row["embedding_dim"]) == backbone_config.embedding_dim
 
 
-# ---------------------------------------------------------------------------
-# 13. overwrite=False skips valid cache entries
-# ---------------------------------------------------------------------------
 
 
 def test_overwrite_false_skips_valid_cache(
@@ -394,9 +324,6 @@ def test_overwrite_false_skips_valid_cache(
     )
 
 
-# ---------------------------------------------------------------------------
-# 14. overwrite=False with corrupt (wrong-dim) cache raises CacheCorruptError
-# ---------------------------------------------------------------------------
 
 
 def test_overwrite_false_corrupt_cache_raises(
@@ -421,7 +348,6 @@ def test_overwrite_false_corrupt_cache_raises(
     rows = load_embedding_manifest(manifest_path)
     cache_path = Path(rows[0]["cache_path"])
 
-    # Corrupt: replace with a wrong-dim tensor.
     torch.save(torch.zeros(512), cache_path)
 
     with pytest.raises(CacheCorruptError, match="dim"):
@@ -450,7 +376,6 @@ def test_overwrite_false_same_dim_corrupt_cache_raises(
     rows = load_embedding_manifest(manifest_path)
     cache_path = Path(rows[0]["cache_path"])
 
-    # Corrupt: replace with a different same-dimensional tensor.
     torch.save(torch.full((backbone_config.embedding_dim,), 999.0), cache_path)
 
     with pytest.raises(CacheCorruptError, match="[Cc]hecksum"):
@@ -484,9 +409,6 @@ def test_orphan_cache_file_without_manifest_is_reextracted_not_trusted(
     )
 
 
-# ---------------------------------------------------------------------------
-# 15. overwrite=True re-extracts existing entries
-# ---------------------------------------------------------------------------
 
 
 def test_overwrite_true_re_extracts(
@@ -511,15 +433,12 @@ def test_overwrite_true_re_extracts(
     rows_first = load_embedding_manifest(manifest_path)
     cache_path = Path(rows_first[0]["cache_path"])
 
-    # Corrupt: replace with a wrong-dim tensor.
     torch.save(torch.zeros(512), cache_path)
 
-    # overwrite=True should replace the corrupt file.
     manifest_path2 = extract_embeddings(**kwargs, overwrite=True)
     rows_second = load_embedding_manifest(manifest_path2)
     new_checksum = rows_second[0]["checksum"]
 
-    # The re-extracted file should now be valid.
     reloaded = load_embedding(
         Path(rows_second[0]["cache_path"]), new_checksum, backbone_config.embedding_dim
     )
@@ -550,9 +469,6 @@ def test_extract_embeddings_rejects_duplicate_sample_ids(
         )
 
 
-# ---------------------------------------------------------------------------
-# 16. MockBackbone deterministic (same input → same output)
-# ---------------------------------------------------------------------------
 
 
 def test_mock_backbone_deterministic(embedding_dim: int) -> None:
@@ -567,9 +483,6 @@ def test_mock_backbone_deterministic(embedding_dim: int) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 17. MockBackbone parameters have requires_grad=False
-# ---------------------------------------------------------------------------
 
 
 def test_mock_backbone_frozen(embedding_dim: int) -> None:
@@ -581,9 +494,6 @@ def test_mock_backbone_frozen(embedding_dim: int) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 18. MockBackbone output shape is (B, embedding_dim)
-# ---------------------------------------------------------------------------
 
 
 def test_mock_backbone_output_shape(embedding_dim: int) -> None:
@@ -596,9 +506,6 @@ def test_mock_backbone_output_shape(embedding_dim: int) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 19. verify_cache_integrity happy path
-# ---------------------------------------------------------------------------
 
 
 def test_verify_cache_integrity_happy_path(
@@ -626,9 +533,6 @@ def test_verify_cache_integrity_happy_path(
     )
 
 
-# ---------------------------------------------------------------------------
-# 20. verify_cache_integrity detects deleted file
-# ---------------------------------------------------------------------------
 
 
 def test_verify_cache_integrity_deleted_file(
@@ -664,9 +568,6 @@ def test_verify_cache_integrity_deleted_file(
     )
 
 
-# ---------------------------------------------------------------------------
-# 21. load_backbone("mock") returns MockBackbone
-# ---------------------------------------------------------------------------
 
 
 def test_load_backbone_mock_returns_mock_backbone() -> None:
@@ -677,9 +578,6 @@ def test_load_backbone_mock_returns_mock_backbone() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 22. load_backbone with unknown model_type → BackboneUnavailableError (no silent mock)
-# ---------------------------------------------------------------------------
 
 
 def test_load_backbone_unknown_type_raises_clearly() -> None:
@@ -691,9 +589,6 @@ def test_load_backbone_unknown_type_raises_clearly() -> None:
         load_backbone(cfg, torch.device("cpu"))
 
 
-# ---------------------------------------------------------------------------
-# 23. preprocess_image returns (3, H, W) float32 tensor
-# ---------------------------------------------------------------------------
 
 
 def test_preprocess_image_shape_and_dtype() -> None:
@@ -726,9 +621,6 @@ def test_preprocess_image_rgba_converts_to_rgb() -> None:
     assert tensor.shape == (3, 224, 224)
 
 
-# ---------------------------------------------------------------------------
-# 24. build_preprocessing_pipeline extract mode is deterministic
-# ---------------------------------------------------------------------------
 
 
 def test_extract_mode_deterministic_despite_aug_config() -> None:
@@ -749,9 +641,6 @@ def test_extract_mode_deterministic_despite_aug_config() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 25. manifest has no entries with checksum="error"
-# ---------------------------------------------------------------------------
 
 
 def test_manifest_no_error_checksum_entries(

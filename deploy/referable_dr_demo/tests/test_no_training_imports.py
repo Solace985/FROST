@@ -1,9 +1,3 @@
-"""No-training / no-optimization tests (FROST tests 16-17).
-
-The demonstrator is inference-only. It must not import the training module and
-must not contain optimizer/backward/fit constructs anywhere in its source.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -11,8 +5,6 @@ from pathlib import Path
 
 DEMO_ROOT = Path(__file__).resolve().parents[1]
 
-# Precise training-API constructs (chosen so prose/docstrings that merely state
-# "no optimizer is created" do not trip the scan).
 FORBIDDEN_CALL_TOKENS = (
     ".backward(",
     "torch.optim",

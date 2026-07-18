@@ -1,19 +1,3 @@
-"""
-tests/test_script_guards.py -- Verify smoke/rehearsal limit-enforcement guards.
-
-Stage 8C smoke and Stage 8D-1 rehearsal configs must require --limit when running
-scripts/03_extract_embeddings.py.
-
-Testing approach
-----------------
-Stage 8C: subprocess tests (the guard exits before backbone/dataset loading).
-Stage 8D-1 detection: unit tests that import and call the guard functions directly
-  with synthetic config dicts.  No subprocess with --limit is used because that
-  would proceed into backbone/dataset loading.
-Stage 8D-1 subprocess: one test verifies the no-limit failure path, which exits
-  before backbone/dataset loading.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -30,9 +14,6 @@ _STAGE8D1_CONFIG = "configs/experiment/stage8d1_brset_resnet50_rehearsal_multita
 _SMOKE_DUMMY_CONFIG = "configs/experiment/smoke_dummy.yaml"
 
 
-# ---------------------------------------------------------------------------
-# Module loader for unit-testing guard functions directly
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -51,9 +32,6 @@ def extract_mod():
     return mod
 
 
-# ---------------------------------------------------------------------------
-# Stage 8C subprocess tests (guard exits before backbone/dataset loading)
-# ---------------------------------------------------------------------------
 
 
 def test_stage8c_guard_exits_nonzero_without_limit() -> None:
@@ -94,9 +72,6 @@ def test_stage8c_guard_does_not_trigger_with_limit() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Stage 8D-1 unit tests — _is_stage8d1_rehearsal_config detection logic
-# ---------------------------------------------------------------------------
 
 
 def test_stage8d1_guard_fires_on_stage8d1_runmode(extract_mod) -> None:
@@ -141,15 +116,12 @@ def test_stage8d1_guard_does_not_fire_for_stage8d3_matrix(extract_mod) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Stage 8D-1 unit tests — full _enforce_stage8a_limit helper
-# ---------------------------------------------------------------------------
 
 
 def test_enforce_limit_passes_for_stage8c_with_limit(extract_mod) -> None:
     """_enforce_stage8a_limit must not raise for a stage8c config when limit is provided."""
     cfg = {"run_mode": "stage8c_brset_smoke"}
-    extract_mod._enforce_stage8a_limit(cfg, limit=1)  # must not raise
+    extract_mod._enforce_stage8a_limit(cfg, limit=1)
 
 
 def test_enforce_limit_raises_systemexit_for_rehearsal_no_limit(extract_mod) -> None:
@@ -162,18 +134,15 @@ def test_enforce_limit_raises_systemexit_for_rehearsal_no_limit(extract_mod) -> 
 def test_enforce_limit_passes_for_rehearsal_with_limit(extract_mod) -> None:
     """_enforce_stage8a_limit must not raise when limit is provided."""
     cfg = {"run_mode": "stage8d1_brset_rehearsal", "rehearsal": True}
-    extract_mod._enforce_stage8a_limit(cfg, limit=1024)  # must not raise
+    extract_mod._enforce_stage8a_limit(cfg, limit=1024)
 
 
 def test_enforce_limit_passes_for_full_run_no_limit(extract_mod) -> None:
     """_enforce_stage8a_limit must not raise for a non-guarded full-run config."""
     cfg = {"run_mode": "stage8d2_brset_full", "preliminary": False, "rehearsal": False}
-    extract_mod._enforce_stage8a_limit(cfg, limit=None)  # must not raise
+    extract_mod._enforce_stage8a_limit(cfg, limit=None)
 
 
-# ---------------------------------------------------------------------------
-# Stage 8D-1 subprocess test — no-limit exits before backbone/dataset work
-# ---------------------------------------------------------------------------
 
 
 def test_stage8d1_guard_exits_nonzero_without_limit() -> None:

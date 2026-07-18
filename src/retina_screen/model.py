@@ -1,13 +1,3 @@
-"""
-model.py -- Multi-task heads and head factory for the retinal screening pipeline.
-
-Owns: MultiTaskHead architecture, LinearProbeHead architecture,
-build_head factory, task-head construction from TASK_REGISTRY, MC-dropout helper.
-
-Must not contain: concrete adapter imports, backbone loading, dataset-specific
-conditionals, optimizer/training loop, evaluation metrics, or paper logic.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -60,7 +50,6 @@ class MultiTaskHead(nn.Module):
         self._task_names = list(task_names)
         self._metadata_dim = metadata_dim
 
-        # Validate all task names and definitions before building any modules.
         for tn in task_names:
             if tn not in TASK_REGISTRY:
                 raise KeyError(
@@ -76,7 +65,6 @@ class MultiTaskHead(nn.Module):
 
         input_dim = embedding_dim + metadata_dim
 
-        # Fusion trunk
         self.trunk = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -88,7 +76,6 @@ class MultiTaskHead(nn.Module):
             nn.Dropout(dropout),
         )
 
-        # Per-task heads
         self.task_heads = nn.ModuleDict()
         for tn in task_names:
             task = TASK_REGISTRY[tn]
@@ -148,7 +135,7 @@ class MultiTaskHead(nn.Module):
             task = TASK_REGISTRY[tn]
             out = self.task_heads[tn](h)
             if task.task_type in (TaskType.BINARY, TaskType.REGRESSION):
-                out = out.squeeze(-1)  # (B, 1) → (B,)
+                out = out.squeeze(-1)
             outputs[tn] = out
 
         return outputs
@@ -185,7 +172,6 @@ class LinearProbeHead(nn.Module):
         super().__init__()
         self._task_names = list(task_names)
 
-        # Validate all task names and definitions before building any modules.
         for tn in task_names:
             if tn not in TASK_REGISTRY:
                 raise KeyError(
@@ -199,7 +185,6 @@ class LinearProbeHead(nn.Module):
                     f"Ordinal task {tn!r} has num_classes=None in TASK_REGISTRY."
                 )
 
-        # One Linear per task: embedding_dim → output_size (no hidden layers).
         self.task_heads = nn.ModuleDict()
         for tn in task_names:
             task = TASK_REGISTRY[tn]
@@ -237,7 +222,7 @@ class LinearProbeHead(nn.Module):
             task = TASK_REGISTRY[tn]
             out = self.task_heads[tn](embedding)
             if task.task_type in (TaskType.BINARY, TaskType.REGRESSION):
-                out = out.squeeze(-1)  # (B, 1) → (B,)
+                out = out.squeeze(-1)
             outputs[tn] = out
         return outputs
 
@@ -246,16 +231,13 @@ class LinearProbeHead(nn.Module):
         return list(self._task_names)
 
 
-# ---------------------------------------------------------------------------
-# Head factory
-# ---------------------------------------------------------------------------
 
 _VALID_HEAD_TYPES: tuple[str, ...] = (
     "multitask",
     "multitask_default",
     "linear_probe",
-    "singletask_linearprobe_pertask",  # F1 Variant A: single-task linear probe alias
-    "singletask_mlp_pertask",          # F1 Variant B: single-task MLP alias
+    "singletask_linearprobe_pertask",
+    "singletask_mlp_pertask",
 )
 
 

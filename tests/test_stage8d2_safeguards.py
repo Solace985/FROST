@@ -1,17 +1,3 @@
-"""
-tests/test_stage8d2_safeguards.py -- Stage 8D-2A safeguard regression tests.
-
-Covers:
-  A. Explicit run-dir / checkpoint-path enforcement for full/internal configs.
-  B. Finality semantics: stage8d2_full_internal reason, rehearsal/smoke unchanged.
-  C. Cache provenance fields: extraction_scope, limit_requested, split_counts,
-     reliability_included.
-  D. Stage 8D-2 config validation: no rehearsal, no final_test_result, full_dataset_run.
-
-No extraction, training, or evaluation is run. All tests use module loading,
-tmp_path fixtures, and synthetic config dicts.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -28,9 +14,6 @@ _STAGE8D1_CONFIG = "configs/experiment/stage8d1_brset_resnet50_rehearsal_multita
 _STAGE8C_CONFIG = "configs/experiment/stage8c_brset_resnet50.yaml"
 
 
-# ---------------------------------------------------------------------------
-# Module loaders
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -55,9 +38,6 @@ def extract_mod():
     return mod
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _load_yaml(path: str) -> dict:
@@ -89,9 +69,6 @@ def _make_run_dir(tmp_path: Path, *, fast_dev_run: bool = False,
     return run_dir
 
 
-# ===========================================================================
-# Section A — Explicit run-dir / checkpoint-path enforcement
-# ===========================================================================
 
 
 def test_full_internal_config_detected_by_full_dataset_run(evaluate_mod) -> None:
@@ -124,7 +101,7 @@ def test_validate_run_dir_passes_for_valid_full_run(evaluate_mod, tmp_path) -> N
         "backbone": "resnet50",
         "task_config": "configs/tasks/brset_default.yaml",
     }
-    evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)  # must not raise/exit
+    evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
 
 
 def test_validate_run_dir_rejects_missing_checkpoint(evaluate_mod, tmp_path) -> None:
@@ -197,9 +174,6 @@ def test_stage8d2_config_is_full_internal(evaluate_mod) -> None:
     assert evaluate_mod._is_full_internal_config(cfg)
 
 
-# ===========================================================================
-# Section B — Finality semantics
-# ===========================================================================
 
 
 def _get_finality(evaluate_mod, cfg: dict) -> tuple[bool, str]:
@@ -252,15 +226,11 @@ def test_stage8d2_final_test_result_never_true(evaluate_mod) -> None:
     assert final is False, "Stage 8D-2 must never produce final_test_result=True"
 
 
-# ===========================================================================
-# Section C — Cache provenance fields
-# ===========================================================================
 
 
 def test_provenance_limited_scope_fields(extract_mod) -> None:
     """When --limit is set, provenance must show extraction_scope='limited'."""
     cfg = {"run_mode": "stage8d1_brset_rehearsal", "stage": "8D-1"}
-    # Simulate what main() builds:
     limit = 32
     prov = {
         "limit_requested": limit,
@@ -314,7 +284,6 @@ def test_provenance_required_fields_present() -> None:
         "split_counts_extracted", "reliability_included",
         "overwrite", "config_path", "cache_dir", "manifest_path",
     }
-    # Simulate a provenance dict built by the script.
     example = {
         "backbone_name": "resnet50", "backbone_version": "IMAGENET1K_V2",
         "backbone_source": "torchvision", "backbone_model_identifier": "ResNet50_Weights.IMAGENET1K_V2",
@@ -341,9 +310,6 @@ def test_provenance_limited_distinguishable_from_full() -> None:
     assert limited["limit_requested"] != full["limit_requested"]
 
 
-# ===========================================================================
-# Section D — Stage 8D-2 config validation
-# ===========================================================================
 
 
 def test_stage8d2_config_does_not_trigger_limit_guard(extract_mod) -> None:

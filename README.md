@@ -52,7 +52,7 @@ around it:
   file. 26 app-local tests cover parity, privacy, "no-training-imports," threshold provenance,
   and the load-once singleton.
 
-**→ [Open the live demo](https://S0lace-frost-referable-dr.hf.space)** and upload any colour
+**→ [Open the live demo](https://nikunj985-frost-referable-dr.hf.space)** and upload any colour
 fundus image to see the decision and the trace.
 
 ---

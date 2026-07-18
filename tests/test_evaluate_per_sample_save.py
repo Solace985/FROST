@@ -1,13 +1,3 @@
-"""
-tests/test_evaluate_per_sample_save.py — Unit tests for per-sample prediction
-persistence added by Stage 8D-3.5 A1 patch.
-
-Tests the ``_save_per_sample_predictions`` helper in scripts/05_evaluate.py.
-
-Scope: save logic only.  No real BRSET data, no backbone weights, no
-checkpoints.  Synthetic eval_samples and per-task arrays are used throughout.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -33,9 +23,6 @@ def evaluate_mod():
     return mod
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_eval_samples(n: int = 5):
     """Return a list of minimal objects with sample_id and patient_id."""
@@ -62,14 +49,10 @@ def _make_task_arrays(n: int, task_names: list[str], *, binary_tasks, ordinal_ta
     return preds_np, targets, masks
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 class TestSavePerSamplePredictions:
     """Unit tests for _save_per_sample_predictions (Stage 8D-3.5 A1 patch)."""
 
-    # Use real BRSET task names so TASK_REGISTRY lookups succeed.
     BINARY_TASK = "diabetes"
     ORDINAL_TASK = "dr_grade"
     ORDINAL_CLASSES = 5
@@ -102,7 +85,6 @@ class TestSavePerSamplePredictions:
     def test_npz_no_pickle(self, evaluate_mod, tmp_path):
         """npz must be loadable with allow_pickle=False (no object arrays beyond sample_id/patient_id)."""
         self._run(evaluate_mod, tmp_path)
-        # allow_pickle=True required for object arrays (sample_id/patient_id strings)
         data = np.load(tmp_path / "predictions.npz", allow_pickle=True)
         assert "sample_id" in data
         assert "patient_id" in data
@@ -218,10 +200,9 @@ class TestSavePerSamplePredictions:
     def test_alignment_error_raised_on_length_mismatch(self, evaluate_mod, tmp_path):
         """Helper must raise RuntimeError if any per-task array length != n_eval_samples."""
         eval_samples = _make_eval_samples(5)
-        # Mismatched logit length for binary task (6 instead of 5)
         preds_np = {
             self.ORDINAL_TASK: np.zeros((5, self.ORDINAL_CLASSES), dtype=np.float32),
-            self.BINARY_TASK: np.zeros(6, dtype=np.float32),  # wrong length
+            self.BINARY_TASK: np.zeros(6, dtype=np.float32),
         }
         targets = {
             self.ORDINAL_TASK: np.zeros(5, dtype=np.float32),

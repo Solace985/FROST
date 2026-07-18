@@ -1,21 +1,4 @@
 #!/usr/bin/env python
-"""
-scripts/00_smoke_dummy.py -- Dummy end-to-end smoke script.
-
-Thin orchestration script.  Proves the pipeline architecture runs from
-DummyAdapter through split → mock embeddings → model → masked loss →
-evaluation → artifacts, without real data or pretrained backbones.
-
-Required artifacts produced:
-  runs/dummy_smoke/<run_id>/resolved_config.yaml
-  runs/dummy_smoke/<run_id>/train_log.csv
-  runs/dummy_smoke/<run_id>/metrics.json
-
-Optional artifact:
-  runs/dummy_smoke/<run_id>/model_checkpoint.pt
-
-No business logic lives in this script.  Logic belongs in src/retina_screen/.
-"""
 
 from __future__ import annotations
 
@@ -28,7 +11,6 @@ from pathlib import Path
 
 import torch
 
-# Allow running without editable-install (pyproject.toml covers this normally).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from retina_screen.adapters.dummy import DummyAdapter
@@ -46,9 +28,6 @@ from retina_screen.model import MultiTaskHead
 from retina_screen.splitting import assert_no_patient_overlap, split_patients
 from retina_screen.training import KendallUncertaintyWeighting, train_one_step
 
-# ---------------------------------------------------------------------------
-# Configuration (change via config YAML in later stages, not by editing this)
-# ---------------------------------------------------------------------------
 
 EMBED_DIM: int = 1024
 N_PATIENTS: int = 80
@@ -56,9 +35,6 @@ N_EPOCHS: int = 3
 SEED: int = 42
 
 
-# ---------------------------------------------------------------------------
-# Mock embedding helper (smoke-only; real embeddings come from embeddings.py)
-# ---------------------------------------------------------------------------
 
 
 def _mock_embedding(sample_id: str, dim: int = EMBED_DIM) -> torch.Tensor:
@@ -68,9 +44,6 @@ def _mock_embedding(sample_id: str, dim: int = EMBED_DIM) -> torch.Tensor:
     return torch.rand(dim, generator=gen)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -81,26 +54,22 @@ def main() -> None:
     run_dir = make_run_dir("runs/dummy_smoke", "smoke")
     logger.info("Run directory: %s", run_dir)
 
-    # --- Resolved config ---
     config = {
         "stage": "dummy_smoke",
         "n_patients": N_PATIENTS,
         "embedding_dim": EMBED_DIM,
         "n_epochs": N_EPOCHS,
         "seed": SEED,
-        # Convert to plain str so yaml.safe_dump can serialise all values.
         "git": {k: str(v) for k, v in capture_git_info().items()},
         "env": {k: str(v) for k, v in capture_env_info().items()},
     }
     save_resolved_config(config, run_dir)
 
-    # --- DummyAdapter ---
     adapter = DummyAdapter(n_patients=N_PATIENTS)
     manifest = adapter.build_manifest()
     task_names = adapter.get_supported_tasks()
     logger.info("Manifest: %d samples | tasks: %s", len(manifest), task_names)
 
-    # --- Patient-level split ---
     split_dict = split_patients(manifest, seed=SEED)
     assert_no_patient_overlap(split_dict, manifest)
 
@@ -111,24 +80,20 @@ def main() -> None:
     test_samples = [sid_to_sample[sid] for sid in test_ids]
     logger.info("Train samples: %d | Test samples: %d", len(train_ids), len(test_ids))
 
-    # --- Mock embeddings ---
     train_emb = torch.stack([_mock_embedding(sid) for sid in train_ids])
     test_emb = torch.stack([_mock_embedding(sid) for sid in test_ids])
 
-    # --- Targets and masks (via data.py) ---
     train_batch = build_task_targets_and_masks(train_samples, task_names)
     test_batch = build_task_targets_and_masks(test_samples, task_names)
 
     train_targets = {t: torch.tensor(train_batch.targets[t]) for t in task_names}
     train_masks = {t: torch.tensor(train_batch.masks[t]) for t in task_names}
 
-    # --- Model ---
     model = MultiTaskHead(embedding_dim=EMBED_DIM, task_names=task_names)
     weighter = KendallUncertaintyWeighting(task_names=task_names)
     params = list(model.parameters()) + list(weighter.parameters())
     optimizer = torch.optim.Adam(params, lr=1e-3)
 
-    # --- Training loop ---
     train_log: list[dict] = []
     for epoch in range(N_EPOCHS):
         result = train_one_step(
@@ -143,7 +108,6 @@ def main() -> None:
             epoch, result["total_loss"], result["grad_norm"],
         )
 
-    # --- Save train_log.csv ---
     csv_path = run_dir / "train_log.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=["epoch", "train_loss", "lr"])
@@ -151,7 +115,6 @@ def main() -> None:
         writer.writerows(train_log)
     logger.info("Saved train_log.csv")
 
-    # --- Inference on test split ---
     model.eval()
     with torch.no_grad():
         test_preds = model(test_emb)
@@ -161,7 +124,6 @@ def main() -> None:
         t: test_preds[t].numpy() for t in task_names
     }
 
-    # --- Evaluation ---
     metrics = evaluate_predictions(
         predictions=preds_np,
         targets=test_batch.targets,
@@ -178,7 +140,6 @@ def main() -> None:
                 r.reason or "-", r.n,
             )
 
-    # --- Save metrics.json ---
     metrics_dict = {
         tn: [
             {
@@ -196,7 +157,6 @@ def main() -> None:
         json.dump(metrics_dict, fh, indent=2)
     logger.info("Saved metrics.json")
 
-    # --- Optional checkpoint ---
     torch.save(model.state_dict(), run_dir / "model_checkpoint.pt")
     logger.info("Saved model_checkpoint.pt")
 

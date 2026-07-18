@@ -1,12 +1,3 @@
-"""privacy.py -- memory-only privacy helpers and safe logging for FROST.
-
-Default behaviour is memory-only: uploads are never persisted, filenames are
-never logged, and no patient identifiers are accepted or recorded. This module
-centralises the *permitted* local log fields and provides a safe logging helper
-that structurally cannot include image bytes, filenames, sample IDs, patient
-IDs, raw embeddings, or image-linked scores.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -14,7 +5,6 @@ from typing import Any
 
 logger = logging.getLogger("frost.request")
 
-# The ONLY fields permitted in a local request log line.
 PERMITTED_LOG_FIELDS = frozenset({
     "event",
     "timestamp",
@@ -26,7 +16,6 @@ PERMITTED_LOG_FIELDS = frozenset({
     "parity_status",
 })
 
-# Fields that must NEVER appear in a log record (defensive allow-list enforcement).
 FORBIDDEN_LOG_SUBSTRINGS = (
     "filename",
     "file_name",

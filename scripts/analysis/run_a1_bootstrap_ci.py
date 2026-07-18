@@ -1,26 +1,3 @@
-"""
-scripts/analysis/run_a1_bootstrap_ci.py — Stage 8D-3.5 A1 Bootstrap CI Driver.
-
-Runs patient-level bootstrap confidence intervals on all 8 Stage 8D-3 matrix cells.
-Produces CI tables, long-form CSVs/JSONs, ordering claims, provenance, and report.
-
-Usage:
-    python scripts/analysis/run_a1_bootstrap_ci.py
-    python scripts/analysis/run_a1_bootstrap_ci.py --n-resamples 2000 --seed 42
-
-Design:
-  - DeLong is NOT implemented. Paired percentile bootstrap is the uniform A1 delta method.
-  - 16 comparison pairs total:
-      4 MT-LP head pairs (same backbone)
-      6 unique backbone pairs within MT (all C(4,2) combinations)
-      6 unique backbone pairs within LP (all C(4,2) combinations)
-  - GATE M: verify included = total - masked for each (cell, task)
-  - GATE P: verify point estimate matches overall_metrics.json within 1e-6
-  - GATE C: SHA-256 checksums for all ingested artifacts
-  - GATE D: verified by running the driver twice (separate invocation)
-
-Script scope: thin entrypoint + driver logic. No ML model code.
-"""
 from __future__ import annotations
 
 import argparse
@@ -38,9 +15,6 @@ from pathlib import Path
 
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Paths and setup
-# ---------------------------------------------------------------------------
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
@@ -62,7 +36,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("run_a1_bootstrap_ci")
 
-# Default manifest from preflight rerun
 DEFAULT_MANIFEST = (
     _PROJECT_ROOT
     / "outputs"
@@ -72,15 +45,10 @@ DEFAULT_MANIFEST = (
 )
 DEFAULT_OUTPUT_BASE = _PROJECT_ROOT / "outputs" / "analysis" / "A1_bootstrap_ci"
 
-# GATE P tolerance
 GATE_P_TOLERANCE = 1e-6
 
-# Sparse-positive threshold (compute AUPRC for tasks with fewer positives than this)
 SPARSE_POSITIVE_THRESHOLD = 50
 
-# ---------------------------------------------------------------------------
-# Task metadata (same for all 8 cells — BRSET 7-task setup)
-# ---------------------------------------------------------------------------
 BINARY_TASKS = [
     "macular_edema",
     "hypertensive_retinopathy",
@@ -92,7 +60,6 @@ BINARY_TASKS = [
 ORDINAL_TASKS = {"dr_grade": 5}
 ALL_TASKS = list(ORDINAL_TASKS.keys()) + BINARY_TASKS
 
-# Positives counts (from preflight §7 — used to determine sparse flag)
 _KNOWN_POSITIVES = {
     "amd": 22,
     "macular_edema": 33,
@@ -119,9 +86,6 @@ def _build_task_metadata() -> dict[str, dict]:
 TASK_METADATA = _build_task_metadata()
 
 
-# ---------------------------------------------------------------------------
-# SHA-256 helper
-# ---------------------------------------------------------------------------
 
 
 def _sha256_file(path: Path) -> str:
@@ -132,9 +96,6 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# Load cell data
-# ---------------------------------------------------------------------------
 
 
 def load_cell(cell_record: dict) -> dict:
@@ -187,9 +148,6 @@ def load_cell(cell_record: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# GATE M — masking verification
-# ---------------------------------------------------------------------------
 
 
 def gate_m_verify(cell_data: dict) -> dict[str, dict]:
@@ -216,18 +174,13 @@ def gate_m_verify(cell_data: dict) -> dict[str, dict]:
     return results
 
 
-# ---------------------------------------------------------------------------
-# GATE P — point-estimate equality
-# ---------------------------------------------------------------------------
 
 
 def _extract_overall_auroc(overall_metrics: dict, task_name: str) -> float | None:
     """Extract AUROC for a binary task from overall_metrics.json."""
-    # Structure: overall_metrics[task_name][metric_name] = value
     task_metrics = overall_metrics.get(task_name)
     if task_metrics is None:
         return None
-    # May be list of metric dicts or a dict
     if isinstance(task_metrics, list):
         for m in task_metrics:
             if isinstance(m, dict) and m.get("metric_name") == "auroc":
@@ -261,8 +214,6 @@ def gate_p_verify(
             }
             continue
 
-        # Try to get the reference value from overall_metrics.json
-        # Skip macro and AUPRC (not in overall_metrics.json)
         if task_name == "binary_macro" or metric_name == "auprc":
             results[key] = {
                 "bootstrap_pe": tr.point_estimate, "overall_metrics_val": None,
@@ -302,9 +253,6 @@ def gate_p_verify(
     return results
 
 
-# ---------------------------------------------------------------------------
-# Comparison pairs definition
-# ---------------------------------------------------------------------------
 
 
 def build_comparison_pairs(cells_by_name: dict) -> list[dict]:
@@ -316,7 +264,6 @@ def build_comparison_pairs(cells_by_name: dict) -> list[dict]:
     backbones = ["resnet50", "convnext_base", "dinov2_base", "dinov2_large"]
     pairs = []
 
-    # 4 MT-LP head pairs
     for bb in backbones:
         cell_mt = f"{bb}_multitask"
         cell_lp = f"{bb}_linearprobe"
@@ -328,7 +275,6 @@ def build_comparison_pairs(cells_by_name: dict) -> list[dict]:
                 "comparison_type": "head",
             })
 
-    # 6 backbone pairs within MT (C(4,2) = 6)
     for bb_a, bb_b in combinations(backbones, 2):
         cell_a = f"{bb_a}_multitask"
         cell_b = f"{bb_b}_multitask"
@@ -340,7 +286,6 @@ def build_comparison_pairs(cells_by_name: dict) -> list[dict]:
                 "comparison_type": "backbone_mt",
             })
 
-    # 6 backbone pairs within LP (C(4,2) = 6)
     for bb_a, bb_b in combinations(backbones, 2):
         cell_a = f"{bb_a}_linearprobe"
         cell_b = f"{bb_b}_linearprobe"
@@ -355,9 +300,6 @@ def build_comparison_pairs(cells_by_name: dict) -> list[dict]:
     return pairs
 
 
-# ---------------------------------------------------------------------------
-# Output writers
-# ---------------------------------------------------------------------------
 
 
 def write_per_cell_ci_table(cells_ci: dict[str, CellCIResult], out_dir: Path) -> None:
@@ -384,7 +326,6 @@ def write_per_cell_ci_table(cells_ci: dict[str, CellCIResult], out_dir: Path) ->
                 "reason": t.reason,
             })
     _write_csv(rows, out_dir / "per_cell_ci_table.csv")
-    # Also write long-form
     _write_csv(rows, out_dir / "matrix_metric_ci_long.csv")
     with open(out_dir / "matrix_metric_ci_long.json", "w", encoding="utf-8") as fh:
         json.dump(rows, fh, indent=2, default=str)
@@ -392,7 +333,7 @@ def write_per_cell_ci_table(cells_ci: dict[str, CellCIResult], out_dir: Path) ->
 
 
 def write_pairwise_delta_tables(
-    deltas: list[dict],  # list of {"pair": dict, "result": DeltaCIResult}
+    deltas: list[dict],
     out_dir: Path,
 ) -> None:
     head_rows = []
@@ -573,9 +514,6 @@ def verify_checksums(checksums: dict[str, str]) -> bool:
     return all_ok
 
 
-# ---------------------------------------------------------------------------
-# A1 Report (20 sections)
-# ---------------------------------------------------------------------------
 
 
 def write_a1_report(
@@ -603,7 +541,6 @@ def write_a1_report(
         "",
     ]
 
-    # §1 — Verdict
     lines += [
         "## §1 — Verdict",
         f"\n**{verdict}**",
@@ -616,7 +553,6 @@ def write_a1_report(
         "",
     ]
 
-    # §2 — Gate summary
     lines += [
         "## §2 — Execution Gate Summary",
         "",
@@ -629,7 +565,6 @@ def write_a1_report(
         "",
     ]
 
-    # §3 — Bootstrap procedure provenance
     lines += [
         "## §3 — Bootstrap Procedure Provenance",
         "",
@@ -655,7 +590,6 @@ def write_a1_report(
         lines.append(f"| {t} | {meta['task_type']} | {metrics} |")
     lines.append("")
 
-    # §4 — Per-cell CI table (compact, 4 decimal places)
     lines += [
         "## §4 — Per-Cell CI Table",
         "",
@@ -680,7 +614,6 @@ def write_a1_report(
             )
         lines.append("")
 
-    # §5 — Long-form output summary
     lines += [
         "## §5 — Long-Form Metric Output Summary",
         "",
@@ -692,7 +625,6 @@ def write_a1_report(
         "",
     ]
 
-    # §6 — Head pairwise deltas (MT vs LP per backbone)
     lines += ["## §6 — Head Pairwise Delta CIs (MT vs LP per backbone)", ""]
     head_deltas = [e for e in deltas if e["pair"]["comparison_type"] == "head"]
     for entry in head_deltas:
@@ -708,7 +640,6 @@ def write_a1_report(
             lines.append(f"| {td.task_name} | {td.metric_name} | {d} | {lo} | {hi} | {td.status} |")
         lines.append("")
 
-    # §7 — Backbone pairwise deltas
     lines += ["## §7 — Backbone Pairwise Delta CIs", ""]
     bb_deltas = [e for e in deltas if e["pair"]["comparison_type"] != "head"]
     for entry in bb_deltas:
@@ -724,7 +655,6 @@ def write_a1_report(
             lines.append(f"| {td.task_name} | {td.metric_name} | {d} | {lo} | {hi} | {td.status} |")
         lines.append("")
 
-    # §8 — Long-form pairwise summary
     lines += [
         "## §8 — Long-Form Pairwise Delta Output Summary",
         "",
@@ -736,7 +666,6 @@ def write_a1_report(
         "",
     ]
 
-    # §9 — ordering_claims.md
     lines += [
         "## §9 — ordering_claims.md Summary",
         "",
@@ -751,7 +680,6 @@ def write_a1_report(
         "",
     ]
 
-    # §10 — Supported orderings
     supported_list = [
         td for e in deltas for td in e["result"].tasks if td.status == "supported"
     ]
@@ -775,7 +703,6 @@ def write_a1_report(
         lines.append("No orderings with 95% CI excluding zero found.")
     lines.append("")
 
-    # §11 — Not-supported orderings (claims to retract or soften)
     not_supported_list = [
         (e, td) for e in deltas for td in e["result"].tasks if td.status == "not_supported"
     ]
@@ -802,7 +729,6 @@ def write_a1_report(
         lines.append("All orderings are supported (all CIs exclude zero).")
     lines.append("")
 
-    # §12 — Sparse-positive CI behavior
     lines += [
         "## §12 — Sparse-Positive CI Behavior",
         "",
@@ -810,7 +736,7 @@ def write_a1_report(
         "",
     ]
     sparse_tasks = [t for t, m in TASK_METADATA.items() if m.get("sparse")]
-    for cell_name in ordered_cell_names[:1]:  # Show for first cell as representative
+    for cell_name in ordered_cell_names[:1]:
         ci = cells_ci[cell_name]
         for tr in ci.tasks:
             if tr.task_name in sparse_tasks and tr.metric_name == "auroc":
@@ -830,7 +756,6 @@ def write_a1_report(
     )
     lines.append("")
 
-    # §13 — Determinism evidence
     lines += [
         "## §13 — Determinism Evidence",
         "",
@@ -843,7 +768,6 @@ def write_a1_report(
         "",
     ]
 
-    # §14 — Per-cell point estimate equality table
     lines += [
         "## §14 — Per-Cell Point Estimate Equality Table (GATE P)",
         "",
@@ -862,7 +786,6 @@ def write_a1_report(
             lines.append(f"| {cell_name} | {t_name} | {m_name} | {pe} | {ref} | {delta} | {pass_str} |")
     lines.append("")
 
-    # §15 — Masking exclusion verification table
     lines += [
         "## §15 — Masking-Exclusion Verification Table (GATE M)",
         "",
@@ -878,7 +801,6 @@ def write_a1_report(
             )
     lines.append("")
 
-    # §16 — Input artifact checksum table
     lines += [
         "## §16 — Input Artifact Checksum Table (GATE C)",
         "",
@@ -889,7 +811,6 @@ def write_a1_report(
         lines.append(f"| {Path(path).name} | {sha[:16]}... |")
     lines.append("")
 
-    # §17 — Git state
     lines += [
         "## §17 — Git State at Execution Time",
         "",
@@ -898,7 +819,6 @@ def write_a1_report(
         "",
     ]
 
-    # §18 — Test suite result
     lines += [
         "## §18 — Test Suite Result",
         "",
@@ -907,7 +827,6 @@ def write_a1_report(
         "",
     ]
 
-    # §19 — run_manifest.json
     lines += [
         "## §19 — run_manifest.json",
         "",
@@ -921,7 +840,6 @@ def write_a1_report(
         "",
     ]
 
-    # §20 — Confirmation list
     lines += [
         "## §20 — Confirmation List",
         "",
@@ -948,15 +866,9 @@ def write_a1_report(
     logger.info("Wrote a1_bootstrap_ci_report.md")
 
 
-# ---------------------------------------------------------------------------
-# Module-level cache for manifest (used by write helpers)
-# ---------------------------------------------------------------------------
 _manifest_cache: list[dict] = []
 
 
-# ---------------------------------------------------------------------------
-# Main driver
-# ---------------------------------------------------------------------------
 
 
 def main() -> int:
@@ -982,7 +894,6 @@ def main() -> int:
 
     start_time = time.monotonic()
 
-    # Set up output directory
     if args.output_dir is None:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         out_dir = DEFAULT_OUTPUT_BASE / ts
@@ -991,7 +902,6 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Output directory: %s", out_dir)
 
-    # PHASE 0 checks
     if not args.manifest.exists():
         logger.error("BLOCKED: manifest not found: %s", args.manifest)
         return 1
@@ -1001,7 +911,6 @@ def main() -> int:
     _manifest_cache = manifest
     logger.info("Loaded manifest with %d cells", len(manifest))
 
-    # Get git SHA for provenance
     import subprocess
     try:
         git_sha = subprocess.check_output(
@@ -1010,7 +919,6 @@ def main() -> int:
     except Exception:
         git_sha = "unknown"
 
-    # Load all 8 cells
     cells_data: dict[str, dict] = {}
     artifact_paths: list[Path] = []
     for cell_record in manifest:
@@ -1021,7 +929,6 @@ def main() -> int:
         artifact_paths.append(cell_data["npz_path"])
         artifact_paths.append(cell_data["metrics_path"])
 
-    # GATE C — compute checksums before any computation
     logger.info("GATE C: computing input artifact checksums...")
     checksums = write_checksums(artifact_paths, out_dir)
     gate_c_ok = verify_checksums(checksums)
@@ -1030,7 +937,6 @@ def main() -> int:
         return 1
     logger.info("GATE C: PASS")
 
-    # GATE M — masking verification
     logger.info("GATE M: verifying masking for all cells and tasks...")
     gate_m_results: dict[str, dict] = {}
     gate_m_pass = True
@@ -1054,7 +960,6 @@ def main() -> int:
         return 1
     logger.info("GATE M: PASS")
 
-    # Run compute_cell_ci for all 8 cells
     cells_ci: dict[str, CellCIResult] = {}
     ordered_cell_names = [r["cell_name"] for r in manifest]
 
@@ -1077,8 +982,6 @@ def main() -> int:
                 "ZeroPositivesInResampleError for %s task=%s resample=%d — skipping resample",
                 cell_name, e.task_name, e.resample_idx,
             )
-            # Caller handles by continuing — but since we raise from the utility,
-            # for BRSET this should not occur. Document and re-raise as BLOCKED.
             logger.error(
                 "BLOCKED: Unexpected ZeroPositivesInResampleError for cell %s — "
                 "this should not occur for BRSET (n_pos >= 22). Investigate.",
@@ -1089,7 +992,6 @@ def main() -> int:
         cells_ci[cell_name] = ci
         logger.info("  Completed %s: %d task-metric results", cell_name, len(ci.tasks))
 
-    # GATE P — point-estimate equality
     logger.info("GATE P: verifying point estimates against overall_metrics.json...")
     gate_p_results: dict[str, dict] = {}
     gate_p_pass = True
@@ -1105,7 +1007,6 @@ def main() -> int:
         return 1
     logger.info("GATE P: PASS")
 
-    # Build comparison pairs and run paired delta CI
     cells_by_name = cells_data
     pairs = build_comparison_pairs(cells_by_name)
     logger.info("Running paired delta CI for %d comparison pairs...", len(pairs))
@@ -1141,12 +1042,10 @@ def main() -> int:
         deltas.append({"pair": pair, "result": delta_result})
         logger.info("    Done: %d task-metric deltas", len(delta_result.tasks))
 
-    # Write output tables
     write_per_cell_ci_table(cells_ci, out_dir)
     write_pairwise_delta_tables(deltas, out_dir)
     write_ordering_claims(deltas, out_dir)
 
-    # Compile gate results for manifest
     elapsed = time.monotonic() - start_time
     gate_results = {
         "gate_m_pass": gate_m_pass,
@@ -1157,7 +1056,6 @@ def main() -> int:
         args, args.manifest, out_dir, len(cells_data), len(pairs), gate_results, elapsed
     )
 
-    # Write A1 report
     write_a1_report(
         out_dir=out_dir,
         cells_ci=cells_ci,
@@ -1176,7 +1074,6 @@ def main() -> int:
     logger.info("A1 complete. Output: %s", out_dir)
     logger.info("Total elapsed: %.1f seconds", elapsed)
 
-    # Print final summary for easy inspection
     print(f"\n=== A1 COMPLETE ===")
     print(f"Verdict: PASS")
     print(f"Output:  {out_dir}")

@@ -1,18 +1,3 @@
-"""
-adapters/base.py -- Abstract base class for all dataset adapters.
-
-Adapters are the only dataset-aware source modules. Each adapter translates
-native dataset structure into canonical CanonicalSample objects.
-
-This file defines the public contract that every concrete adapter must satisfy.
-Concrete adapters may add private helpers but must not expose native dataset
-vocabulary through public methods.
-
-Allowed imports: standard library, retina_screen.schema, retina_screen.tasks.
-Must not import: model, training, evaluation, data, preprocessing, embeddings,
-continual, dashboard_app, reporting, or any concrete adapter.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -33,9 +18,6 @@ class DatasetAdapter(ABC):
     defined here; it must not branch on adapter identity or dataset name.
     """
 
-    # ------------------------------------------------------------------
-    # Abstract interface (every concrete adapter must implement these)
-    # ------------------------------------------------------------------
 
     @abstractmethod
     def build_manifest(self) -> list[CanonicalSample]:
@@ -99,9 +81,6 @@ class DatasetAdapter(ABC):
         """
         ...
 
-    # ------------------------------------------------------------------
-    # Concrete helpers (concrete adapters may override for efficiency)
-    # ------------------------------------------------------------------
 
     def get_patient_id(self, sample_id: str) -> str:
         """Return the patient ID for *sample_id*.
@@ -138,7 +117,6 @@ class DatasetAdapter(ABC):
         cls_name = type(self).__name__
         schema_fields = set(CanonicalSample.model_fields.keys())
 
-        # --- Manifest non-empty ---
         manifest = self.build_manifest()
         if not manifest:
             raise ValueError(f"{cls_name}.build_manifest() returned an empty list")
@@ -150,7 +128,6 @@ class DatasetAdapter(ABC):
                     f"CanonicalSample; got {type(sample).__name__}"
                 )
 
-        # --- Unique, non-empty sample IDs ---
         sample_ids: list[str] = [s.sample_id for s in manifest]
         seen: set[str] = set()
         duplicates: list[str] = []
@@ -172,7 +149,6 @@ class DatasetAdapter(ABC):
                     f"{cls_name}: sample {s.sample_id!r} has an empty patient_id"
                 )
 
-        # --- Supported tasks in registry ---
         for task in self.get_supported_tasks():
             if task not in TASK_REGISTRY:
                 raise ValueError(
@@ -186,7 +162,6 @@ class DatasetAdapter(ABC):
                     f"{target_column!r}, which is not a field in CanonicalSample"
                 )
 
-        # --- Stratification columns in schema ---
         for col in self.get_stratification_columns():
             if col not in schema_fields:
                 raise ValueError(
@@ -194,7 +169,6 @@ class DatasetAdapter(ABC):
                     f"in CanonicalSample"
                 )
 
-        # --- Quality columns in schema ---
         for col in self.get_quality_columns():
             if col not in schema_fields:
                 raise ValueError(

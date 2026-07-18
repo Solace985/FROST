@@ -1,20 +1,3 @@
-"""
-adapters/dummy.py -- Deterministic synthetic adapter for pipeline testing.
-
-DummyAdapter produces valid CanonicalSample objects without any real dataset
-files. It is used to validate the full pipeline (splitting, data loading,
-feature policy, task masking, model, evaluation) before real datasets are
-connected.
-
-Design invariants:
-- Deterministic for a given (n_patients, seed) configuration.
-- Includes bilateral eye structure (some patients have L and R samples).
-- Includes subgroup variation: sex, age, device class.
-- Includes a mix of observed labels and missing labels (None, never 0).
-- Requires no real fundus images; load_image() returns a synthetic PIL image.
-- Contains no ODIR/BRSET/mBRSET native vocabulary.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -71,7 +54,6 @@ class DummyAdapter(DatasetAdapter):
         "image_quality_label",
     ]
 
-    # Fraction of binary labels to leave as None (missing / not observed).
     _MISSING_RATE: float = 0.35
 
     def __init__(self, n_patients: int = 20, seed: int = 42) -> None:
@@ -85,9 +67,6 @@ class DummyAdapter(DatasetAdapter):
         self._manifest: list[CanonicalSample] | None = None
         self._index: dict[str, CanonicalSample] | None = None
 
-    # ------------------------------------------------------------------
-    # DatasetAdapter interface
-    # ------------------------------------------------------------------
 
     def build_manifest(self) -> list[CanonicalSample]:
         """Return the full list of synthetic canonical samples (cached)."""
@@ -115,7 +94,6 @@ class DummyAdapter(DatasetAdapter):
         64x64 RGB image whose colour is derived from the sample_id SHA-256.
         No real fundus image file is required.
         """
-        # Raises KeyError if sample not found — consistent with contract.
         _ = self.load_sample(sample_id)
         from PIL import Image  # noqa: PLC0415
 
@@ -132,17 +110,14 @@ class DummyAdapter(DatasetAdapter):
     def get_quality_columns(self) -> list[str]:
         return list(self._QUALITY_COLUMNS)
 
-    # ------------------------------------------------------------------
-    # Private generation
-    # ------------------------------------------------------------------
 
     def _generate(self) -> list[CanonicalSample]:
         """Generate the deterministic synthetic manifest."""
         rng = _random.Random(self._seed)
         samples: list[CanonicalSample] = []
 
-        n_bilateral = self._n_patients // 2  # first half get both eyes
-        n_clinical = (self._n_patients * 3) // 4  # first 75% get clinical device
+        n_bilateral = self._n_patients // 2
+        n_clinical = (self._n_patients * 3) // 4
 
         for i in range(self._n_patients):
             pid = f"dummy_P{i + 1:04d}"
@@ -175,9 +150,7 @@ class DummyAdapter(DatasetAdapter):
                         camera_type="dummy_fundus_camera",
                         image_quality_score=iq_score,
                         image_quality_label=iq_label,
-                        # dr_grade is always observed (primary ophthalmic outcome)
                         dr_grade=rng.randint(0, 4),
-                        # Binary labels have a chance of being missing
                         glaucoma=self._maybe_binary(rng),
                         cataract=self._maybe_binary(rng),
                         diabetes=self._maybe_binary(rng),

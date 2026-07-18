@@ -1,11 +1,3 @@
-"""provenance.py -- hashing, versions, git, and repo-root resolution for FROST.
-
-App-local helpers only. Reads nothing private; computes SHA-256 hashes of local
-artifacts, captures the Python/torch/timm versions and git commit, and resolves
-the repository root so the canonical ``retina_screen`` package can be imported as
-a read-only library. Does not modify any pipeline file.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -19,9 +11,6 @@ from typing import Sequence
 
 logger = logging.getLogger(__name__)
 
-# Repo root = five parents up from this file:
-#   deploy/referable_dr_demo/backend/service/provenance.py
-#   [0]=service [1]=backend [2]=referable_dr_demo [3]=deploy [4]=<repo root>
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC_ROOT = REPO_ROOT / "src"
 DEMO_ROOT = Path(__file__).resolve().parents[2]

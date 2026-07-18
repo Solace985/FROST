@@ -1,37 +1,3 @@
-"""
-adapters/brset.py -- BRSET dataset adapter.
-
-BRSET-specific native vocabulary is confined to this file and BRSET configs/tests.
-Downstream pipeline code consumes only CanonicalSample fields and task registry names.
-
-Stage 8C scope
---------------
-BRSET (Brazilian Multilabel Ophthalmological Dataset, PhysioNet v1.0.1) is the
-primary scientific dataset. This adapter implements the full canonical mapping
-for Stage 8C.
-
-Label policy
------------
-- DR_SDRG -> canonical dr_grade (0-4). DR_ICDR retained in audit metadata only.
-  This is a project canonicalization decision for reproducibility (Stage 8C locked).
-- macular_edema: direct binary ophthalmologist-labeled retinal finding (HIGH quality).
-  Not derived from dr_grade. Not confused with diabetic_retinopathy severity.
-- hypertensive_retinopathy: direct fundoscopic retinal finding, NOT systemic hypertension.
-- diabetes: clinical/medical-record label (PROXY). Do not overclaim.
-- increased_cup_disc is NOT glaucoma. Glaucoma is unsupported for BRSET.
-- pathological_myopia: DEFERRED. myopic_fundus is an anatomical proxy (indirect).
-  Per-dataset label-quality override is not yet enforced downstream. Set to None.
-- comorbidities: free text; dropped entirely and never exposed.
-- image_id and patient_id are pseudonymised before CanonicalSample creation.
-  Canonical patient_id = brset_pNNNNNN and sample_id = brset_sNNNNNN based on
-  deterministic sorted-index mapping. Raw native IDs are never embedded in
-  canonical IDs, split files, cache manifests, or cache filenames.
-- NaN values map to None, never to 0.
-- Sex encoding: 1=Male, 2=Female (BRSET PhysioNet v1.0.1 documentation confirmed).
-- Laterality: exam_eye 1=right, 2=left (BRSET PhysioNet v1.0.1 documentation confirmed).
-- Unknown camera values map to DeviceClass.UNKNOWN (fail-closed), not CLINICAL.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -60,9 +26,6 @@ from retina_screen.tasks import TASK_REGISTRY, TaskType
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Native BRSET column names (private to this adapter boundary)
-# ---------------------------------------------------------------------------
 
 _COL_IMAGE_ID = "image_id"
 _COL_PATIENT_ID = "patient_id"
@@ -114,7 +77,6 @@ _REQUIRED_COLUMNS: frozenset[str] = frozenset(
     }
 )
 
-# Components that feed into the other_ocular computed label
 _OTHER_OCULAR_COLS: tuple[str, ...] = (
     _COL_SCAR,
     _COL_NEVUS,
@@ -124,23 +86,17 @@ _OTHER_OCULAR_COLS: tuple[str, ...] = (
     _COL_OTHER,
 )
 
-# Known BRSET camera names (lowercase) -> DeviceClass.
-# Unrecognised cameras map to DeviceClass.UNKNOWN (fail-closed).
 _CAMERA_TO_DEVICE_CLASS: dict[str, DeviceClass] = {
     "canon cr": DeviceClass.CLINICAL,
     "nikon nf5050": DeviceClass.CLINICAL,
 }
 
-# Native quality string (lowercase) -> ImageQualityLabel
 _QUALITY_MAP: dict[str, ImageQualityLabel] = {
     "adequate": ImageQualityLabel.GOOD,
     "inadequate": ImageQualityLabel.REJECT,
 }
 
 
-# ---------------------------------------------------------------------------
-# Private parsing helpers
-# ---------------------------------------------------------------------------
 
 
 def _parse_binary_int(value: Any, col_name: str) -> int | None:
@@ -308,17 +264,14 @@ def _compute_other_ocular(row: pd.Series) -> int | None:
     for col in _OTHER_OCULAR_COLS:
         val = _parse_binary_int(row.get(col), col)
         if val == 1:
-            return 1  # short-circuit: confirmed positive
+            return 1
         if val is None:
             any_missing = True
     if any_missing:
-        return None  # missing data: cannot confirm negative
-    return 0  # all components are confirmed observed negatives
+        return None
+    return 0
 
 
-# ---------------------------------------------------------------------------
-# BRSETAdapter
-# ---------------------------------------------------------------------------
 
 
 class BRSETAdapter(DatasetAdapter):
@@ -375,7 +328,6 @@ class BRSETAdapter(DatasetAdapter):
         if missing_cols:
             raise ValueError(f"BRSET metadata missing required columns: {missing_cols}")
 
-        # Audit state (populated during manifest build)
         self._excluded_by_reason: Counter[str] = Counter()
         self._multi_row_patient_count: int = 0
         self._dr_sdrg_dist: Counter[int] = Counter()
@@ -388,9 +340,6 @@ class BRSETAdapter(DatasetAdapter):
             s.sample_id: s for s in self._manifest
         }
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
 
     def build_manifest(self) -> list[CanonicalSample]:
         return list(self._manifest)
@@ -428,7 +377,6 @@ class BRSETAdapter(DatasetAdapter):
             for s in self._manifest
         )
 
-        # Task-type-aware label coverage
         label_coverage: dict[str, dict] = {}
         for task in self._supported_tasks:
             task_def = TASK_REGISTRY[task]
@@ -576,9 +524,6 @@ class BRSETAdapter(DatasetAdapter):
             },
         }
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _build_id_mappings(
@@ -618,8 +563,6 @@ class BRSETAdapter(DatasetAdapter):
             "drusen",
             "other_ocular",
             "diabetes",
-            # pathological_myopia deferred: myopic_fundus is anatomical proxy;
-            # per-dataset label-quality override not yet enforced downstream.
         ]
         tasks: list[str] = []
         for name in required:
@@ -664,7 +607,6 @@ class BRSETAdapter(DatasetAdapter):
             dr_sdrg = _parse_dr_grade(row.get(_COL_DR_SDRG), _COL_DR_SDRG)
             dr_icdr = _parse_dr_grade(row.get(_COL_DR_ICDR), _COL_DR_ICDR)
 
-            # Track DR distributions for audit metadata
             if dr_sdrg is not None:
                 self._dr_sdrg_dist[dr_sdrg] += 1
             if dr_icdr is not None:
@@ -696,11 +638,9 @@ class BRSETAdapter(DatasetAdapter):
                     row.get(_COL_HTR), _COL_HTR
                 ),
                 drusen=_parse_binary_int(row.get(_COL_DRUSENS), _COL_DRUSENS),
-                # pathological_myopia deferred: myopic_fundus is anatomical proxy.
                 pathological_myopia=None,
                 other_ocular=_compute_other_ocular(row),
                 diabetes=_parse_diabetes(row.get(_COL_DIABETES)),
-                # Unsupported for BRSET — always None
                 glaucoma=None,
                 cataract=None,
                 hypertension=None,

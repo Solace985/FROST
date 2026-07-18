@@ -1,7 +1,3 @@
-"""
-tests/test_feature_policy.py -- Verify FeaturePolicy leakage-prevention contracts.
-"""
-
 from __future__ import annotations
 import pytest
 from retina_screen.feature_policy import FeaturePolicy, ModelInputMode

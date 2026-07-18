@@ -1,27 +1,3 @@
-"""
-test_retfound_green_native392_setup.py -- Setup verification for RETFound-Green native-392 comparator.
-
-Verifies Stage 8D-3.5 B2 native-392 setup is correct before BRSET extraction runs:
-
- 1. retfound_green_native392.yaml declares embedding_dim=384
- 2. Native backbone config declares input_size=392 (not 224)
- 3. Native backbone config declares global_pool='avg' (not 'token')
- 4. Native backbone config uses original checkpoint route (NOT interpolated _224)
- 5. Native backbone config documents external-validation exclusions (ODIR, AIROGS, DDR)
- 6. Native backbone config is a protocol comparator, not a main matrix replacement
- 7. Native preprocessing config has image_size=392 (distinct from default_224)
- 8. Native preprocessing hash differs from default_224 preprocessing hash
- 9. Native experiment configs are BRSET-only (no ODIR/AIROGS/DDR as active dataset)
-10. Native experiment configs do not override class_weighting_enabled to true
-11. Native experiment configs have final_test_result=false
-12. MT and LP native configs share the same cache namespace
-13. Matched-224 config remains unchanged (input_size=224, native_392_deferred=true)
-14. loader instantiates native-392 model with img_size=(392,392) and global_pool='avg' (mocked)
-15. BackboneConfig input_size and global_pool fields default to 224 and 'token' for matched-224
-
-No real checkpoint, no BRSET raw data, no network access required.
-"""
-
 from __future__ import annotations
 
 import os
@@ -40,9 +16,6 @@ from retina_screen.embeddings import (
 )
 from retina_screen.preprocessing import PreprocessingConfig, get_preprocessing_hash
 
-# ---------------------------------------------------------------------------
-# Constants / helpers
-# ---------------------------------------------------------------------------
 
 _BACKBONE_DIR = Path("configs/backbone")
 _EXPERIMENT_DIR = Path("configs/experiment")
@@ -86,9 +59,6 @@ def _make_prep_config(raw: dict) -> PreprocessingConfig:
     )
 
 
-# ---------------------------------------------------------------------------
-# 1. Native backbone config declares embedding_dim=384
-# ---------------------------------------------------------------------------
 
 
 def test_native392_config_declares_384_dim() -> None:
@@ -98,9 +68,6 @@ def test_native392_config_declares_384_dim() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 2. Native backbone config declares input_size=392
-# ---------------------------------------------------------------------------
 
 
 def test_native392_config_declares_input_size_392() -> None:
@@ -110,9 +77,6 @@ def test_native392_config_declares_input_size_392() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 3. Native backbone config declares global_pool='avg'
-# ---------------------------------------------------------------------------
 
 
 def test_native392_config_declares_avg_pooling() -> None:
@@ -123,21 +87,16 @@ def test_native392_config_declares_avg_pooling() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 4. Native backbone config uses original checkpoint route (NOT interpolated _224)
-# ---------------------------------------------------------------------------
 
 
 def test_native392_config_references_original_checkpoint_not_224() -> None:
     cfg = _load_backbone_cfg("retfound_green_native392")
     checkpoint_path = str(cfg.get("checkpoint_path", "") or "")
-    # If a hardcoded path is set, it must not point to the interpolated _224 checkpoint
     assert "statedict_224" not in checkpoint_path.lower(), (
         f"retfound_green_native392.yaml checkpoint_path must not reference "
         f"retfoundgreen_statedict_224.pth (the PE-interpolated matched-224 checkpoint); "
         f"got {checkpoint_path!r}"
     )
-    # Native config sha256 field should match original checkpoint, not 224 checkpoint
     sha_field = str(cfg.get("checkpoint_sha256_original", "") or "")
     if sha_field:
         assert sha_field.upper() == "431DE5DBC1BEBBB32F60E2C0BCF8DAA4F8BCBF06F7CB1E1DC97EC589713942E1", (
@@ -146,9 +105,6 @@ def test_native392_config_references_original_checkpoint_not_224() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 5. Native backbone config documents external-validation exclusions
-# ---------------------------------------------------------------------------
 
 
 def test_native392_config_excludes_odir_and_external_datasets() -> None:
@@ -165,14 +121,10 @@ def test_native392_config_excludes_odir_and_external_datasets() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 6. Native config is a comparator, not a main matrix replacement
-# ---------------------------------------------------------------------------
 
 
 def test_native392_config_is_comparator_not_main_matrix() -> None:
     cfg = _load_backbone_cfg("retfound_green_native392")
-    # Must not claim to replace the matched-224 main matrix row
     assert cfg.get("main_matrix_replacement", True) is False, (
         "retfound_green_native392.yaml must declare main_matrix_replacement=false"
     )
@@ -181,9 +133,6 @@ def test_native392_config_is_comparator_not_main_matrix() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 7. Native preprocessing config has image_size=392
-# ---------------------------------------------------------------------------
 
 
 def test_native392_preprocessing_config_has_392_image_size() -> None:
@@ -194,9 +143,6 @@ def test_native392_preprocessing_config_has_392_image_size() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 8. Native preprocessing hash differs from default_224
-# ---------------------------------------------------------------------------
 
 
 def test_native392_preprocessing_hash_differs_from_default224() -> None:
@@ -211,16 +157,12 @@ def test_native392_preprocessing_hash_differs_from_default224() -> None:
         f"to produce a distinct cache namespace; "
         f"native={native_hash!r}, default224={default_hash!r}"
     )
-    # Also confirm 92d0f40b94aea26c is NOT the native hash (that's the matched-224 hash)
     assert native_hash != "92d0f40b94aea26c", (
         f"Native-392 preprocessing hash must not be 92d0f40b94aea26c "
         f"(that is the matched-224 RETFound-Green cache hash)"
     )
 
 
-# ---------------------------------------------------------------------------
-# 9. Native experiment configs are BRSET-only
-# ---------------------------------------------------------------------------
 
 
 def test_native392_experiment_configs_are_brset_only() -> None:
@@ -236,9 +178,6 @@ def test_native392_experiment_configs_are_brset_only() -> None:
             )
 
 
-# ---------------------------------------------------------------------------
-# 10. Native experiment configs do not override class_weighting_enabled
-# ---------------------------------------------------------------------------
 
 
 def test_native392_configs_class_weighting_false() -> None:
@@ -251,9 +190,6 @@ def test_native392_configs_class_weighting_false() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 11. Native experiment configs have final_test_result=false
-# ---------------------------------------------------------------------------
 
 
 def test_native392_configs_final_test_result_false() -> None:
@@ -265,9 +201,6 @@ def test_native392_configs_final_test_result_false() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 12. MT and LP native configs share the same cache namespace
-# ---------------------------------------------------------------------------
 
 
 def test_native392_mt_lp_configs_share_cache_namespace(tmp_path: Path) -> None:
@@ -283,7 +216,6 @@ def test_native392_mt_lp_configs_share_cache_namespace(tmp_path: Path) -> None:
     assert mt_cfg.get("dataset") == lp_cfg.get("dataset"), (
         "Native-392 MT and LP configs must bind to the same dataset"
     )
-    # Confirm they resolve to the same cache dir (different from matched-224)
     native_raw = _load_prep_cfg("retfound_green_native392")
     native_prep = _make_prep_config(native_raw)
     native_hash = get_preprocessing_hash(native_prep)
@@ -293,16 +225,12 @@ def test_native392_mt_lp_configs_share_cache_namespace(tmp_path: Path) -> None:
     assert mt_dir == lp_dir, (
         f"MT and LP native configs resolve to different cache dirs: {mt_dir} vs {lp_dir}"
     )
-    # Confirm native cache dir is separate from matched-224 cache dir
     matched224_dir = get_cache_dir(tmp_path, "retfound_green", "brset", "92d0f40b94aea26c")
     assert mt_dir != matched224_dir, (
         "Native-392 and matched-224 RETFound-Green must not share a cache directory"
     )
 
 
-# ---------------------------------------------------------------------------
-# 13. Matched-224 config remains unchanged
-# ---------------------------------------------------------------------------
 
 
 def test_matched224_config_unchanged() -> None:
@@ -313,16 +241,12 @@ def test_matched224_config_unchanged() -> None:
     assert cfg.get("native_392_deferred") is True, (
         f"retfound_green_matched224.yaml native_392_deferred changed; must remain true"
     )
-    # global_pool not set in matched-224 config → BackboneConfig defaults to 'token'
     assert cfg.get("global_pool") is None or cfg.get("global_pool") == "token", (
         f"retfound_green_matched224.yaml global_pool changed unexpectedly: "
         f"{cfg.get('global_pool')!r}"
     )
 
 
-# ---------------------------------------------------------------------------
-# 14. loader instantiates native-392 model with img_size=(392,392) and global_pool='avg'
-# ---------------------------------------------------------------------------
 
 
 def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
@@ -335,7 +259,7 @@ def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
       4. Calls model.load_state_dict() with the remapped state dict.
     """
     fake_ckpt = tmp_path / "retfoundgreen_statedict.pth"
-    fake_ckpt.write_bytes(b"fake")  # path must exist; torch.load is mocked below
+    fake_ckpt.write_bytes(b"fake")
 
     cfg = BackboneConfig(
         name="retfound_green_native392",
@@ -354,9 +278,8 @@ def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
     mock_model.return_value = torch.zeros(1, 384)
     mock_model.to.return_value = mock_model
     mock_model.training = False
-    mock_model.load_state_dict.return_value = ([], [])  # success (no missing/unexpected keys)
+    mock_model.load_state_dict.return_value = ([], [])
 
-    # Fake state dict with norm.weight/bias — these must be remapped to fc_norm.*
     fake_state = {
         "norm.weight": torch.zeros(384),
         "norm.bias": torch.zeros(384),
@@ -368,33 +291,27 @@ def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
         patch("timm.list_models", return_value=["vit_small_patch14_reg4_dinov2"]),
         patch("retina_screen.embeddings._freeze_backbone"),
         patch("retina_screen.embeddings._verify_embedding_dim"),
-        patch("torch.load", return_value=fake_state),  # mock state-dict load for avg-pool path
+        patch("torch.load", return_value=fake_state),
     ):
         result = load_backbone(cfg, torch.device("cpu"))
 
     mock_create.assert_called_once()
     call_kwargs = mock_create.call_args
-    # Must use 392×392 input, not 224×224
     assert call_kwargs[1].get("img_size") == (392, 392), (
         f"timm.create_model must be called with img_size=(392,392) for native protocol; "
         f"got {call_kwargs}"
     )
-    # Must use avg pooling, not CLS token
     assert call_kwargs[1].get("global_pool") == "avg", (
         f"timm.create_model must be called with global_pool='avg' for native protocol; "
         f"got {call_kwargs}"
     )
-    # Must still use num_classes=0
     assert call_kwargs[1].get("num_classes") == 0, (
         f"timm.create_model must be called with num_classes=0; got {call_kwargs}"
     )
-    # For avg-pool path: checkpoint_path must NOT be passed to timm.create_model
-    # (state dict is loaded manually and injected via load_state_dict)
     assert "checkpoint_path" not in call_kwargs[1], (
         f"For avg-pool native protocol, timm.create_model must NOT receive checkpoint_path; "
         f"checkpoint is loaded manually and injected via load_state_dict. got {call_kwargs}"
     )
-    # Verify load_state_dict was called with fc_norm remapping
     mock_model.load_state_dict.assert_called_once()
     state_passed = mock_model.load_state_dict.call_args[0][0]
     assert "fc_norm.weight" in state_passed, (
@@ -411,9 +328,6 @@ def test_native392_loader_resolves_correct_timm_args(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 15. BackboneConfig defaults to 224 / 'token' for matched-224 compatibility
-# ---------------------------------------------------------------------------
 
 
 def test_backbone_config_defaults_preserve_matched224_behavior() -> None:
@@ -433,9 +347,6 @@ def test_backbone_config_defaults_preserve_matched224_behavior() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Architecture smoke (timm required)
-# ---------------------------------------------------------------------------
 
 timm = pytest.importorskip(
     "timm",

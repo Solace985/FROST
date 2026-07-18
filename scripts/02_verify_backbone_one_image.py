@@ -1,15 +1,4 @@
 #!/usr/bin/env python
-"""
-scripts/02_verify_backbone_one_image.py -- Verify backbone with one image.
-
-Thin orchestration script. Proves: backbone loads → one image preprocesses →
-embedding extracted → saved → reloaded → checksum and dimension verified.
-
-No business logic lives here. Logic is in src/retina_screen/.
-
-Usage:
-    python scripts/02_verify_backbone_one_image.py --config configs/experiment/smoke_dummy.yaml
-"""
 
 from __future__ import annotations
 
@@ -134,7 +123,6 @@ def main() -> None:
         backbone_config.embedding_dim, device,
     )
 
-    # Build adapter from config and take the first sample.
     dataset_cfg = _load_dataset_config(cfg)
     _ds_name = dataset_cfg.get("name", cfg.get("dataset", "dummy"))
     adapter = _build_adapter(cfg)
@@ -144,18 +132,15 @@ def main() -> None:
     logger.info("Using sample_id=%s (patient_id=%s, dataset=%s)",
                 sample.sample_id, sample.patient_id, _ds_name)
 
-    # Preprocess.
     img = adapter.load_image(sample.sample_id)
     tensor = preprocess_image(img, prep_config, mode="extract")
     logger.info("Image preprocessed: input_size=%s, output_shape=%s", img.size, tuple(tensor.shape))
 
-    # Extract embedding.
-    batch = tensor.unsqueeze(0).to(device)   # (1, C, H, W)
+    batch = tensor.unsqueeze(0).to(device)
     with torch.no_grad():
-        embedding = backbone(batch).squeeze(0).cpu()   # (embedding_dim,)
+        embedding = backbone(batch).squeeze(0).cpu()
     logger.info("Embedding extracted: shape=%s", tuple(embedding.shape))
 
-    # Save and reload.
     prep_hash = get_preprocessing_hash(prep_config)
     cache_dir = get_cache_dir(
         cache_root, backbone_config.name, sample.dataset_source, prep_hash
@@ -172,7 +157,6 @@ def main() -> None:
         f"Wrong embedding shape {embedding.shape}, expected ({backbone_config.embedding_dim},)."
     )
 
-    # Frozen parameter check.
     all_frozen = all(not p.requires_grad for p in backbone.parameters())
     n_params = sum(1 for _ in backbone.parameters())
     logger.info("Frozen check: all_frozen=%s, n_params=%d", all_frozen, n_params)
@@ -181,7 +165,6 @@ def main() -> None:
         f"All backbone parameters must have requires_grad=False."
     )
 
-    # Silent mock fallback guard.
     mock_used = isinstance(backbone, MockBackbone)
     if mock_used and backbone_config.model_type != "mock":
         logger.error(
@@ -191,7 +174,6 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Write structured verification JSON.
     run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     verify_dir = Path("outputs") / "backbone_verification" / run_id
     verify_dir.mkdir(parents=True, exist_ok=True)

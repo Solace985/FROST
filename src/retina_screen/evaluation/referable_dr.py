@@ -1,26 +1,3 @@
-"""
-referable_dr.py -- Referable-DR binary endpoint recast from dr_grade ordinal predictions.
-
-Stage 8D-3.5 C1 implementation.
-
-Design
-------
-Referable-DR is the clinically meaningful binary endpoint derived from the 5-class
-dr_grade ordinal task. Grade ≥ 2 (moderate DR or worse) is defined as referable.
-
-This module provides:
-  1. Pure array transformations (no I/O, no dataset name coupling)
-  2. Thin wrappers over bootstrap_ci.compute_cell_ci / compute_paired_delta_ci
-
-Score  : P(dr_grade ≥ 2) = softmax(logit__dr_grade)[:,2:5].sum(axis=1)
-Label  : grade 0/1 → 0 (nonreferable), grade 2/3/4 → 1 (referable)
-Missing: label == -1 → excluded (mask set to 0.0 before passing to bootstrap_ci)
-
-ZeroPositivesInResampleError from bootstrap_ci is NOT caught here; it propagates
-to the driver. The driver must halt with BLOCKED_C1_BOOTSTRAP_ZERO_POSITIVE_FAILURE
-and report the affected cell/pair — do NOT silently return NA.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -31,7 +8,7 @@ import numpy as np
 from retina_screen.evaluation.bootstrap_ci import (
     CellCIResult,
     DeltaCIResult,
-    ZeroPositivesInResampleError,  # re-exported so callers need not import bootstrap_ci
+    ZeroPositivesInResampleError,
     compute_cell_ci,
     compute_paired_delta_ci,
 )
@@ -49,20 +26,14 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Task metadata for bootstrap_ci wrappers
-# ---------------------------------------------------------------------------
 
 REFERABLE_DR_TASK_METADATA: dict[str, dict[str, Any]] = {
     "referable_dr": {
         "task_type": "binary",
-        "sparse": True,  # always compute AUPRC; n_pos=73 for BRSET test set (sparse endpoint)
+        "sparse": True,
     }
 }
 
-# ---------------------------------------------------------------------------
-# Pure array functions — no I/O, no dataset coupling
-# ---------------------------------------------------------------------------
 
 
 def compute_referable_dr_score(logit_dr_grade: np.ndarray) -> np.ndarray:
@@ -81,12 +52,10 @@ def compute_referable_dr_score(logit_dr_grade: np.ndarray) -> np.ndarray:
         raise ValueError(
             f"logit_dr_grade must have shape (N, 5), got {logit_dr_grade.shape}"
         )
-    # Numerically stable softmax: subtract per-row maximum before exp
     arr = logit_dr_grade.astype(np.float64)
     shifted = arr - arr.max(axis=1, keepdims=True)
     exp_s = np.exp(shifted)
     probs = exp_s / exp_s.sum(axis=1, keepdims=True)
-    # Sum classes 2, 3, 4 — the referable grades
     return probs[:, 2:].sum(axis=1)
 
 
@@ -169,7 +138,6 @@ def make_referable_dr_from_dr_grade_logits(
     ref_label = compute_referable_dr_label(labels_v, referable_min_grade=referable_min_grade)
     score = compute_referable_dr_score(logits_v)
 
-    # Within the masked-valid set, further exclude any missing-label samples
     label_ok = ref_label != -1.0
     score_out = score[label_ok]
     label_out = ref_label[label_ok]
@@ -216,9 +184,6 @@ def _prob_to_logit(p: np.ndarray, eps: float = 1e-7) -> np.ndarray:
     return np.log(p_clipped / (1.0 - p_clipped))
 
 
-# ---------------------------------------------------------------------------
-# bootstrap_ci wrappers
-# ---------------------------------------------------------------------------
 
 
 def compute_referable_dr_bootstrap_ci(
@@ -274,15 +239,12 @@ def compute_referable_dr_bootstrap_ci(
             "all samples have mask=0; cannot compute metrics."
         )
 
-    # Convert 5-class logits → P(grade ≥ 2)
     score = compute_referable_dr_score(logit_dr_grade)
 
-    # Build binary label; set mask=0 for any missing-label samples
     ref_label = compute_referable_dr_label(label_dr_grade)
     ref_mask = mask_dr_grade.copy().astype(np.float64)
-    ref_mask[ref_label == -1.0] = 0.0  # exclude missing-label samples
+    ref_mask[ref_label == -1.0] = 0.0
 
-    # Replace -1 sentinel with 0.0 in the label array (these samples are masked out)
     safe_label = ref_label.copy()
     safe_label[safe_label == -1.0] = 0.0
 
@@ -294,7 +256,6 @@ def compute_referable_dr_bootstrap_ci(
             "Verify mask, labels, and referable_min_grade."
         )
 
-    # Convert score → logit space (bootstrap_ci applies sigmoid internally)
     logit_score = _prob_to_logit(score)
 
     logger.info(

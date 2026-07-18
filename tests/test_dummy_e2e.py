@@ -91,7 +91,6 @@ def smoke_run_dir() -> Path:
     runs_root.mkdir(parents=True, exist_ok=True)
     before = {p.resolve() for p in runs_root.glob("smoke_*") if p.is_dir()}
 
-    # Smoke run names use second-level timestamps; avoid accidental directory reuse.
     time.sleep(1.1)
     result = subprocess.run(
         [sys.executable, "scripts/00_smoke_dummy.py"],
@@ -111,7 +110,6 @@ def smoke_run_dir() -> Path:
     return new_runs[0]
 
 
-# --- No real data ---
 
 def test_no_real_data_needed(e2e):
     for s in e2e["manifest"]:
@@ -138,7 +136,6 @@ def test_feature_policy_metadata_path_in_e2e(e2e):
         assert metadata.observation_mask[field] in (0.0, 1.0)
 
 
-# --- Split safety ---
 
 def test_patient_split_no_overlap(e2e):
     assert_no_patient_overlap(e2e["split_dict"], e2e["manifest"])
@@ -149,7 +146,6 @@ def test_all_splits_nonempty(e2e):
         assert len(ids) > 0, f"Split {name!r} is empty"
 
 
-# --- Task masks ---
 
 def test_masks_are_zero_or_one(e2e):
     for tn in e2e["task_names"]:
@@ -172,7 +168,7 @@ def test_observed_binary_zero_has_mask_one_target_zero(e2e):
             continue
         for tgt, mask in zip(e2e["train_batch"].targets[tn], e2e["train_batch"].masks[tn]):
             if tgt == 0.0 and mask == 1.0:
-                return  # found one
+                return
     pytest.skip("No observed binary-0 labels in this dataset configuration")
 
 
@@ -183,7 +179,6 @@ def test_masks_align_with_targets(e2e):
         assert t_len == m_len, f"Target/mask length mismatch for task {tn!r}"
 
 
-# --- Model output shapes ---
 
 def test_model_forward_has_all_configured_tasks(e2e):
     for tn in e2e["task_names"]:
@@ -204,7 +199,6 @@ def test_ordinal_outputs_are_2d(e2e):
             assert out.shape[-1] == TASK_REGISTRY[tn].num_classes
 
 
-# --- Loss and training ---
 
 def test_loss_is_finite(e2e):
     loss = e2e["step_result"]["total_loss"]
@@ -212,9 +206,7 @@ def test_loss_is_finite(e2e):
 
 
 def test_fully_masked_task_has_valid_count_zero(e2e):
-    # Build a batch where all labels for one task are missing
     task_names = e2e["task_names"]
-    # Pick the first binary task
     binary_tasks = [t for t in task_names if TASK_REGISTRY[t].task_type == TaskType.BINARY]
     if not binary_tasks:
         pytest.skip("No binary tasks to test")
@@ -250,9 +242,7 @@ def test_kendall_skips_all_missing_tasks_by_count(e2e):
     one_result = TaskLossResult(losses=all_zero_losses, valid_counts=all_one_counts)
     zero_total = e2e["weighter"](zero_result)
     one_total = e2e["weighter"](one_result)
-    # all-missing should produce a near-zero (grad_fn safe) total
     assert math.isfinite(zero_total.item())
-    # non-missing should also be finite
     assert math.isfinite(one_total.item())
 
 
@@ -275,7 +265,6 @@ def test_one_optimizer_step_runs(e2e):
     assert math.isfinite(e2e["step_result"]["grad_norm"])
 
 
-# --- Evaluation ---
 
 def test_evaluation_returns_nonempty_dict(e2e):
     assert len(e2e["metrics"]) > 0
@@ -290,7 +279,6 @@ def test_at_least_one_metric_ok_or_na_not_crash(e2e):
 
 
 def test_sparse_subgroup_returns_na_not_crash(e2e):
-    # With small test split, binary metrics likely return NA — verify it doesn't crash
     found_na = False
     for tn, results in e2e["metrics"].items():
         for r in results:
@@ -298,10 +286,8 @@ def test_sparse_subgroup_returns_na_not_crash(e2e):
                 found_na = True
                 assert isinstance(r.reason, str)
                 assert len(r.reason) > 0
-    # It's OK if found_na is False (all metrics valid), just ensure no crash above
 
 
-# --- Artifact tests ---
 
 def test_smoke_creates_resolved_config(smoke_run_dir):
     cfg_path = smoke_run_dir / "resolved_config.yaml"
@@ -339,5 +325,4 @@ def test_smoke_creates_train_log_csv(smoke_run_dir):
 
 
 def test_smoke_creates_optional_model_checkpoint(smoke_run_dir):
-    # The current Stage 5 smoke script writes this simple optional artifact.
     assert (smoke_run_dir / "model_checkpoint.pt").exists()

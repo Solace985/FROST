@@ -1,26 +1,9 @@
-"""build_local_deployment_bundle.py -- build the FROST local deployment bundle.
-
-Thin entrypoint. Discovers the accepted RETFound-Green native-392 + MultiTaskHead
-artifacts, runs every fail-closed validation gate (hashes, embedding dim 384,
-average pooling, native input 392, task ordering, dr_grade output shape 5), and
-writes the IGNORED local manifest:
-
-    deploy/referable_dr_demo/.local/deployment_bundle.local.json
-
-Reads pipeline artifacts read-only; writes only under .local/. No pipeline file,
-config, cache, run, or output is modified.
-
-Run:
-    uv run python deploy/referable_dr_demo/analysis/build_local_deployment_bundle.py
-"""
-
 from __future__ import annotations
 
 import logging
 import sys
 from pathlib import Path
 
-# Make the repo root importable so the absolute package path resolves.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from deploy.referable_dr_demo.backend.service import bundle as bundle_mod  # noqa: E402
@@ -36,7 +19,6 @@ def main() -> int:
     out = bundle_mod.default_bundle_path()
     bundle_mod.write_bundle(manifest, out)
 
-    # Round-trip re-validation against live artifacts.
     bundle_mod.validate_bundle_against_artifacts(manifest)
 
     print("OK: wrote local deployment bundle")

@@ -1,25 +1,3 @@
-"""
-training.py -- Masked multi-task loss computation and training utilities.
-
-Owns: compute_masked_task_loss, KendallUncertaintyWeighting, train_one_step,
-      train_one_epoch, EarlyStopping, compute_class_weights,
-      get_kendall_log_sigmas.
-
-Must not contain: concrete adapter imports, native dataset parsing, evaluation
-metrics, or paper/dashboard logic.
-
-NaN + mask contract (regression tasks)
---------------------------------------
-Missing regression targets are stored as NaN (MISSING_REGRESSION_PLACEHOLDER)
-with mask=0 in data.py.  This module filters by mask BEFORE computing loss:
-
-    valid = mask == 1.0
-    loss  = mse_loss(pred[valid], target[valid])
-
-Do NOT compute raw_loss * mask after the fact, because NaN * 0.0 = NaN.
-This contract must also be honoured in Stage 5+ training code.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -35,9 +13,6 @@ from retina_screen.tasks import TASK_REGISTRY, TaskType
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Task loss result
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -49,13 +24,10 @@ class TaskLossResult:
     uses this to skip all-missing tasks rather than inspecting the loss value.
     """
 
-    losses: dict[str, torch.Tensor]  # task_name → scalar loss (zero if no valid rows)
-    valid_counts: dict[str, int]      # task_name → number of observed rows used
+    losses: dict[str, torch.Tensor]
+    valid_counts: dict[str, int]
 
 
-# ---------------------------------------------------------------------------
-# Masked loss computation
-# ---------------------------------------------------------------------------
 
 
 def compute_masked_task_loss(
@@ -110,16 +82,14 @@ def compute_masked_task_loss(
             )
 
         elif task.task_type == TaskType.ORDINAL:
-            v_pred = pred[valid_idx]               # (n_valid, num_classes)
-            v_target = target[valid_idx].long()    # (n_valid,) class IDs
+            v_pred = pred[valid_idx]
+            v_target = target[valid_idx].long()
             cw = None
             if class_weights is not None and tn in class_weights:
                 cw = class_weights[tn].to(device)
             losses[tn] = F.cross_entropy(v_pred, v_target, weight=cw, reduction="mean")
 
         elif task.task_type == TaskType.REGRESSION:
-            # Hard rule: filter by mask FIRST, then compute loss.
-            # Never compute loss on NaN targets.
             v_pred = pred[valid_idx]
             v_target = target[valid_idx]
             losses[tn] = F.mse_loss(v_pred, v_target, reduction="mean")
@@ -132,9 +102,6 @@ def compute_masked_task_loss(
     return TaskLossResult(losses=losses, valid_counts=valid_counts)
 
 
-# ---------------------------------------------------------------------------
-# Kendall uncertainty weighting
-# ---------------------------------------------------------------------------
 
 
 class KendallUncertaintyWeighting(nn.Module):
@@ -172,7 +139,7 @@ class KendallUncertaintyWeighting(nn.Module):
 
         for tn in self._task_names:
             if task_loss_result.valid_counts.get(tn, 0) == 0:
-                continue  # all-missing: skip, determined by count not loss value
+                continue
             s = torch.clamp(
                 self.log_sigmas[tn], self.LOG_SIGMA_MIN, self.LOG_SIGMA_MAX
             ).squeeze()
@@ -180,7 +147,6 @@ class KendallUncertaintyWeighting(nn.Module):
             weighted.append(torch.exp(-2.0 * s) * task_loss + s)
 
         if not weighted:
-            # All tasks missing: return zero with a grad_fn so backward is safe.
             dummy = next(iter(self.log_sigmas.values()))
             return (dummy * 0.0).squeeze()
 
@@ -191,9 +157,6 @@ class KendallUncertaintyWeighting(nn.Module):
         return list(self._task_names)
 
 
-# ---------------------------------------------------------------------------
-# Single training step (signature extended, backward-compatible via P1 contract)
-# ---------------------------------------------------------------------------
 
 
 def train_one_step(
@@ -259,9 +222,6 @@ def train_one_step(
     }
 
 
-# ---------------------------------------------------------------------------
-# Mini-batch epoch training
-# ---------------------------------------------------------------------------
 
 
 def train_one_epoch(
@@ -334,9 +294,6 @@ def train_one_epoch(
     }
 
 
-# ---------------------------------------------------------------------------
-# Early stopping
-# ---------------------------------------------------------------------------
 
 
 class EarlyStopping:
@@ -397,9 +354,6 @@ class EarlyStopping:
         return self._epochs_without_improvement
 
 
-# ---------------------------------------------------------------------------
-# Class weight computation (config-controlled; disabled for standard run)
-# ---------------------------------------------------------------------------
 
 
 def compute_class_weights(
@@ -467,14 +421,10 @@ def compute_class_weights(
                 tn, [round(float(w), 3) for w in class_w.tolist()],
             )
 
-        # Regression: no class weighting applicable
 
     return weights
 
 
-# ---------------------------------------------------------------------------
-# Kendall log-sigma logging helper
-# ---------------------------------------------------------------------------
 
 
 def get_kendall_log_sigmas(weighter: KendallUncertaintyWeighting) -> dict[str, float]:

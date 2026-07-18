@@ -1,13 +1,3 @@
-"""Shared fixtures for FROST app-local tests.
-
-Heavy fixtures (bundle, service, FastAPI client) try to assemble the real
-artifacts and ``pytest.skip`` when they are unavailable, so the committed suite
-passes in any environment and runs fully where the private checkpoints exist.
-
-No BRSET images are embedded in committed tests; synthetic images are generated
-in-process.
-"""
-
 from __future__ import annotations
 
 import io
@@ -21,7 +11,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-# Make local artifacts discoverable via the canonical defaults if present.
 _default_brset = REPO_ROOT / "data" / "brset"
 if "RETINA_SCREEN_BRSET_ROOT" not in os.environ and _default_brset.exists():
     os.environ["RETINA_SCREEN_BRSET_ROOT"] = str(_default_brset)

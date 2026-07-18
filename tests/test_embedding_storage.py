@@ -1,19 +1,3 @@
-"""
-test_embedding_storage.py -- Regression tests for embedding cache storage compaction.
-
-Guards against the W1 storage-view bug where ViT-based backbones (e.g. DINOv2) return
-the CLS token as a view into the full token-sequence backing storage.  When torch.save()
-serialises a view it writes the entire backing buffer rather than only the visible elements,
-inflating each .pt file from ~3 KB to ~773 KB for DINOv2-Base (ViT-B/14, 257 tokens).
-
-These tests verify:
-  1. The pre-patch view-storage condition is detectable (simulates the bug).
-  2. _compact_embedding fixes the storage ratio to <= 2.0, preserves shape/dtype/values.
-  3. save_embedding + load_embedding round-trip produces a compact file on disk.
-
-No real backbone, no real images, no network access required.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,14 +11,10 @@ from retina_screen.embeddings import (
     save_embedding,
 )
 
-# ViT-B/14: 16*16 spatial patches + 1 CLS token = 257 sequence positions
 _DIM = 768
 _SEQ_LEN = 257
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_cls_view() -> torch.Tensor:
@@ -44,8 +24,6 @@ def _make_cls_view() -> torch.Tensor:
     backbone is DINOv2 ViT-B/14 and the hub model exposes the CLS token as a slice.
     """
     tokens = torch.randn(1, _SEQ_LEN, _DIM)
-    # Slice the CLS token: tokens[:, 0] has shape (1, 768), squeeze(0) → (768,).
-    # The result shares backing storage with `tokens` (all 257 * 768 * 4 bytes).
     return tokens[:, 0].squeeze(0)
 
 
@@ -55,9 +33,6 @@ def _storage_ratio(t: torch.Tensor) -> float:
     return storage_bytes / compact_bytes
 
 
-# ---------------------------------------------------------------------------
-# Class 1: verify the view-storage condition exists before compaction
-# ---------------------------------------------------------------------------
 
 
 class TestViewStorageConditionDetected:
@@ -71,16 +46,12 @@ class TestViewStorageConditionDetected:
         """The view tensor's backing storage must be >> its visible elements."""
         cls_view = _make_cls_view()
         ratio = _storage_ratio(cls_view)
-        # For ViT-B/14 the ratio should be ~257; require at least 10 to be robust.
         assert ratio > 10.0, (
             f"Expected storage_ratio > 10.0 to simulate the view-storage leak; "
             f"got {ratio:.2f}.  Check that _make_cls_view() still produces a view."
         )
 
 
-# ---------------------------------------------------------------------------
-# Class 2: _compact_embedding fixes storage while preserving semantics
-# ---------------------------------------------------------------------------
 
 
 class TestCompactionFixesStorage:
@@ -127,9 +98,6 @@ class TestCompactionFixesStorage:
         assert result.is_contiguous()
 
 
-# ---------------------------------------------------------------------------
-# Class 3: save_embedding + load_embedding round-trip is compact
-# ---------------------------------------------------------------------------
 
 
 class TestSaveReloadCompactStorage:

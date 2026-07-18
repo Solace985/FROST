@@ -68,10 +68,21 @@ new addition that reproduces that study's pipeline for local inspection.
 
 ---
 
-## Local-only status
+## Local-only status (default) and optional hosting
 
-The server binds to `127.0.0.1` only. There is no public-hosting configuration.
-No external network access is required or performed at inference time.
+Run locally, the server binds to `127.0.0.1` only and performs no external
+network access at inference time.
+
+For a **free, persistent, CPU** public deployment there is a self-contained
+**Hugging Face Docker Space** setup under [`hf_space/`](hf_space/) — one container
+serving the FastAPI backend **and** the static frontend. It is deployment-ready
+without a separate weights repo: the public RETFound-Green backbone (Apache-2.0)
+is fetched + SHA-verified at Docker build, and the 501 KB trained head + the
+operating-point JSON travel inside the Space. No credentialed BRSET data is ever
+included; the server's startup self-check uses only synthetic/random inputs, and
+the study-score reproduction gate (`analysis/verify_parity.py`) is run **locally**
+before deploying. See **[`hf_space/DEPLOY.md`](hf_space/DEPLOY.md)** for the full
+step-by-step runbook.
 
 ## Project artifact prerequisites
 

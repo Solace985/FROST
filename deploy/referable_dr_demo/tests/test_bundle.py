@@ -1,5 +1,3 @@
-"""Bundle validation tests (FROST tests 1-6)."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,7 +51,7 @@ def test_bundle_fails_on_hash_mismatch(tmp_path):
         "preprocessing_hash": preprocessing_parity.preprocessing_hash(),
         "backbone_checkpoint_path": str(backbone),
         "head_checkpoint_path": str(head),
-        "backbone_checkpoint_sha256": "DEADBEEF" * 8,  # wrong on purpose
+        "backbone_checkpoint_sha256": "DEADBEEF" * 8,
         "head_checkpoint_sha256": "FEEDFACE" * 8,
         "model_task_ordering": ["dr_grade"],
         "task_ordering_hash": "x",

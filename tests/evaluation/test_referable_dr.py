@@ -1,10 +1,3 @@
-"""
-test_referable_dr.py -- Unit tests for Stage 8D-3.5 C1 referable-DR utility.
-
-All tests use synthetic data only. No BRSET data is accessed.
-Deterministic via np.random.default_rng(0).
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -22,9 +15,6 @@ from retina_screen.evaluation.referable_dr import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_logits(n: int, seed: int = 0) -> np.ndarray:
@@ -45,7 +35,6 @@ def _make_synthetic_cell(
     pos_idx = rng.choice(n, size=n_referable, replace=False)
     labels[pos_idx] = rng.choice([2, 3, 4], size=n_referable)
     mask = np.ones(n, dtype=np.float64)
-    # Assign 1 patient per 2 samples (approx)
     patient_ids = np.repeat(np.arange(n // 2), 2)[:n]
     return {
         "logits": logits,
@@ -55,9 +44,6 @@ def _make_synthetic_cell(
     }
 
 
-# ---------------------------------------------------------------------------
-# 1. Label mapping tests
-# ---------------------------------------------------------------------------
 
 
 def test_labels_0_1_map_to_nonreferable():
@@ -92,9 +78,6 @@ def test_mixed_labels_correct_mapping():
     np.testing.assert_array_equal(result, expected)
 
 
-# ---------------------------------------------------------------------------
-# 2. Score computation tests
-# ---------------------------------------------------------------------------
 
 
 def test_score_equals_softmax_classes_234():
@@ -102,7 +85,6 @@ def test_score_equals_softmax_classes_234():
     rng = np.random.default_rng(0)
     logits = rng.standard_normal((50, 5)).astype(np.float64)
 
-    # Reference implementation
     shifted = logits - logits.max(axis=1, keepdims=True)
     exp_s = np.exp(shifted)
     probs = exp_s / exp_s.sum(axis=1, keepdims=True)
@@ -142,9 +124,6 @@ def test_shape_mismatch_raises():
         compute_referable_dr_score(logits_bad)
 
 
-# ---------------------------------------------------------------------------
-# 3. Mask exclusion tests
-# ---------------------------------------------------------------------------
 
 
 def test_mask_excludes_samples():
@@ -167,16 +146,13 @@ def test_all_missing_raises():
     n = 50
     logits = _make_logits(n)
     labels = np.zeros(n, dtype=np.float64)
-    mask = np.zeros(n, dtype=np.float64)  # all missing
+    mask = np.zeros(n, dtype=np.float64)
     pids = np.arange(n, dtype=np.int64)
 
     with pytest.raises(ValueError):
         compute_referable_dr_bootstrap_ci(logits, labels, mask, pids, cell_name="test_all_masked")
 
 
-# ---------------------------------------------------------------------------
-# 4. Bootstrap determinism tests
-# ---------------------------------------------------------------------------
 
 
 def test_auroc_recomputation_deterministic():
@@ -232,9 +208,6 @@ def test_patient_level_bootstrap_deterministic():
     assert t1 == t2
 
 
-# ---------------------------------------------------------------------------
-# 5. Paired delta tests
-# ---------------------------------------------------------------------------
 
 
 def test_paired_bootstrap_is_deterministic():
@@ -265,8 +238,7 @@ def test_sample_alignment_mismatch_raises():
     ca = _make_synthetic_cell(n=n, n_referable=15, seed=5)
     cb = _make_synthetic_cell(n=n, n_referable=15, seed=6)
 
-    # Different patient IDs for cell B
-    cb["patient_ids"] = cb["patient_ids"] + 10000  # offset to create mismatch
+    cb["patient_ids"] = cb["patient_ids"] + 10000
 
     with pytest.raises(ValueError, match="patient"):
         compute_referable_dr_pair_delta(
@@ -277,28 +249,13 @@ def test_sample_alignment_mismatch_raises():
         )
 
 
-# ---------------------------------------------------------------------------
-# 6. Score invariance and anti-argmax tests
-# ---------------------------------------------------------------------------
 
 
 def test_no_use_of_predicted_argmax():
     """Score must be P(class ≥ 2), not argmax-based — ordering must differ."""
-    # Construct logits where argmax = class 0 (nonreferable)
-    # but P(class ≥ 2) is high (classes 2,3,4 summed > 0.9)
-    #
-    # logits: [10, 0, 5, 5, 5] → softmax ~ [0.999, ~0, ~0.0003, ~0.0003, ~0.0003]
-    # No — flip: make argmax=0 but ensure 2+3+4 sum > 0.5
-    # Actually: [0, 0, 5, 5, 5] → softmax: class0≈0.015, class1≈0.015, classes2-4≈0.97
-    # argmax = 2 (still referable). Let's use: [5, 0, 3, 3, 3]
-    # softmax: class0 ~ exp(5)/Z, classes2-4 ~ exp(3)/Z
-    # P(class 0) = exp(5)/(exp(5)+exp(0)+3*exp(3)) ≈ 148/(148+1+60) ≈ 0.71
-    # P(referable) ≈ 0.29
-    # argmax = 0 (nonreferable) but P(referable) = 0.29 (could flip with different samples)
 
-    # Test: ensure score = sum of softmax classes 2,3,4 (not just indicator of argmax >= 2)
     logits = np.array([[5.0, 0.0, 3.0, 3.0, 3.0]], dtype=np.float64)
-    arr = logits - logits.max(axis=1, keepdims=True)  # = [[0, -5, -2, -2, -2]]
+    arr = logits - logits.max(axis=1, keepdims=True)
     exp_s = np.exp(arr)
     probs = exp_s / exp_s.sum(axis=1, keepdims=True)
 
@@ -306,20 +263,15 @@ def test_no_use_of_predicted_argmax():
     expected_score = float(probs[0, 2:].sum())
     actual_score = float(compute_referable_dr_score(logits)[0])
 
-    # Verify argmax is 0 (nonreferable) but score correctly reflects soft probability
     assert argmax_pred == 0, "Argmax should be class 0 in this test case"
     np.testing.assert_allclose(actual_score, expected_score, atol=1e-10)
 
-    # Verify the score is NOT 0.0 (it would be if we used argmax >= 2 indicator)
     assert actual_score > 0.01, (
         f"Score={actual_score} suspiciously close to 0 — "
         "may be using argmax indicator instead of softmax probability."
     )
 
 
-# ---------------------------------------------------------------------------
-# 7. Single-class / degenerate case tests
-# ---------------------------------------------------------------------------
 
 
 def test_single_class_result_not_fake_auroc():
@@ -327,12 +279,10 @@ def test_single_class_result_not_fake_auroc():
     rng = np.random.default_rng(0)
     n = 100
     logits = _make_logits(n)
-    # All labels are grade 0 (nonreferable)
     labels = np.zeros(n, dtype=np.float64)
     mask = np.ones(n, dtype=np.float64)
     pids = np.arange(n, dtype=np.int64)
 
-    # Should raise ValueError (pre-check) or ZeroPositivesInResampleError (bootstrap)
     with pytest.raises((ValueError, ZeroPositivesInResampleError)):
         compute_referable_dr_bootstrap_ci(
             logits, labels, mask, pids,
@@ -342,9 +292,6 @@ def test_single_class_result_not_fake_auroc():
         )
 
 
-# ---------------------------------------------------------------------------
-# 8. prob_to_logit round-trip test
-# ---------------------------------------------------------------------------
 
 
 def test_prob_to_logit_round_trip():
@@ -363,9 +310,6 @@ def test_prob_to_logit_monotone():
     assert np.all(diffs > 0), f"Logit transform not monotone: {logits}"
 
 
-# ---------------------------------------------------------------------------
-# 9. REFERABLE_DR_TASK_METADATA validation
-# ---------------------------------------------------------------------------
 
 
 def test_task_metadata_correct_structure():
@@ -376,9 +320,6 @@ def test_task_metadata_correct_structure():
     assert meta.get("sparse") is True, "sparse must be True to force AUPRC computation"
 
 
-# ---------------------------------------------------------------------------
-# 10. Output files list test
-# ---------------------------------------------------------------------------
 
 
 def test_compatibility_output_files_produced():

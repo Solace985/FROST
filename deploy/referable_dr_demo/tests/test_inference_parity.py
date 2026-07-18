@@ -1,5 +1,3 @@
-"""Frozen-inference and parity tests (FROST tests 7, 8, 22, 23)."""
-
 from __future__ import annotations
 
 import pytest

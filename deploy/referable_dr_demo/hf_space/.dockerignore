@@ -1,0 +1,33 @@
+# Build context hygiene for the FROST Docker Space.
+# The Space repo should already contain only src/, configs/, deploy/ + this
+# Dockerfile, but these rules guarantee no credentialed/large/dev data ever
+# enters the image even if present in the build context.
+
+# Python / tooling noise
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.DS_Store
+**/Thumbs.db
+
+# Demonstrator dev-only artifacts (NEVER needed at runtime)
+deploy/referable_dr_demo/tests/
+deploy/referable_dr_demo/.local/
+deploy/referable_dr_demo/graphical_changes.md
+
+# Credentialed / heavy study data — must never be in the artifact
+outputs/
+cache/
+runs/
+models/
+data/
+datasets/
+brset/
+BRSET/
+paper/
+docs/
+*.log
+*.npz
+*.csv

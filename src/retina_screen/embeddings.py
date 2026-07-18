@@ -1,46 +1,3 @@
-"""
-embeddings.py -- Backbone loading, frozen embedding extraction, and cache management.
-
-Owns: backbone loading, one-image verification, frozen embedding extraction,
-cache path construction, manifest writing/loading, checksum validation, cache repair.
-
-Must not contain: task losses, fairness metrics, dashboard UI, native dataset parsing,
-or any import of concrete adapter classes. Image loading is injected via an
-image_loader callback to keep this module adapter-agnostic.
-
-Cache namespace
----------------
-    cache_root / backbone_name / dataset_source / preprocessing_hash /
-
-Manifest columns
-----------------
-    sample_id, patient_id, dataset_source, cache_path, embedding_dim,
-    backbone_name, backbone_version, preprocessing_hash, created_at, checksum
-
-Silent cache skipping is FORBIDDEN (see docs/ai_context/04_forbidden_patterns.md).
-Missing or corrupt cache entries raise CacheMissError / CacheCorruptError.
-
-overwrite=False contract
-------------------------
-- Valid cache reuse requires a manifest row, matching namespace metadata, matching
-  checksum, and exact one-dimensional shape (embedding_dim,).
-- Existing orphan cache files without a manifest row are not trusted; they are
-  re-extracted.
-- Corrupt, missing, wrong-rank, or wrong-dim manifest-backed files raise
-  CacheCorruptError / CacheMissError.
-
-overwrite=True: always re-extract regardless of existing state.
-
-Real backbone support (Stage 8A / 8D-3.5-B2 / 8D-3.5-B3)
------------------------------------------------------------
-Supported model_type values: 'mock', 'resnet50', 'convnext_base', 'dinov2', 'retfound_green',
-'dinov3'.
-Original RETFound/RETFound-MEH remains deferred/access-pending and is not part of B2.
-RETFound-Green uses timm (vit_small_patch14_reg4_dinov2, 384-dim, matched-224, Decision 029).
-DINOv3-Large uses timm (vit_large_patch16_dinov3_qkvb, 1024-dim, native-224/CLS-token).
-Unknown model_type raises BackboneUnavailableError — never falls back silently to mock.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -80,9 +37,6 @@ MANIFEST_FIELDNAMES: list[str] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
 
 
 class CacheMissError(FileNotFoundError):
@@ -105,27 +59,21 @@ class BackboneDimensionError(ValueError):
     """Raised when a backbone produces an embedding with the wrong dimensionality."""
 
 
-# ---------------------------------------------------------------------------
-# BackboneConfig
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class BackboneConfig:
     """Backbone identity and output specification."""
 
-    name: str            # "mock", "dinov2_large", "retfound_green", etc.
-    embedding_dim: int   # output dimensionality, e.g. 1024
-    model_type: str      # "mock" | "dinov2" | "retfound_green" | "convnext_base" | "resnet50"
-    version: str = ""    # version string; empty for mock
-    checkpoint_path: str = ""  # local path to weights file; used by timm-loaded backbones
-    input_size: int = 224      # image input resolution; 224 for matched-matrix, 392 for native
-    global_pool: str = "token" # timm global_pool; "token" (CLS) or "avg" (native-392 protocol)
+    name: str
+    embedding_dim: int
+    model_type: str
+    version: str = ""
+    checkpoint_path: str = ""
+    input_size: int = 224
+    global_pool: str = "token"
 
 
-# ---------------------------------------------------------------------------
-# MockBackbone
-# ---------------------------------------------------------------------------
 
 
 class MockBackbone(nn.Module):
@@ -140,7 +88,6 @@ class MockBackbone(nn.Module):
         super().__init__()
         self._embedding_dim = embedding_dim
         self.pool = nn.AdaptiveAvgPool2d(1)
-        # Save and restore RNG state so MockBackbone construction is side-effect free.
         saved_state = torch.get_rng_state()
         torch.manual_seed(0)
         self.proj = nn.Linear(in_channels, embedding_dim, bias=True)
@@ -150,14 +97,11 @@ class MockBackbone(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass: (B, C, H, W) → (B, embedding_dim)."""
-        pooled = self.pool(x)                   # (B, C, 1, 1)
-        flat = pooled.view(pooled.size(0), -1)  # (B, C)
-        return self.proj(flat)                  # (B, embedding_dim)
+        pooled = self.pool(x)
+        flat = pooled.view(pooled.size(0), -1)
+        return self.proj(flat)
 
 
-# ---------------------------------------------------------------------------
-# Backbone loading helpers
-# ---------------------------------------------------------------------------
 
 
 def _freeze_backbone(model: nn.Module) -> None:
@@ -211,7 +155,6 @@ def _load_resnet50(config: BackboneConfig, device: torch.device) -> nn.Module:
             f"Failed to load ResNet-50 weights (IMAGENET1K_V2): {exc}. "
             f"Check network access or pre-cached weights."
         ) from exc
-    # Replace fc with Identity to expose the 2048-dim pooled features, not ImageNet logits.
     model.fc = nn.Identity()
     _freeze_backbone(model)
     model.to(device)
@@ -237,8 +180,6 @@ def _load_convnext_base(config: BackboneConfig, device: torch.device) -> nn.Modu
             f"Failed to load ConvNeXt-Base weights (IMAGENET1K_V1): {exc}. "
             f"Check network access or pre-cached weights."
         ) from exc
-    # classifier = Sequential([LayerNorm2d(1024), Flatten, Linear(1024, 1000)])
-    # Replace the final Linear with Identity → 1024-dim output after LayerNorm2d + Flatten.
     model.classifier[-1] = nn.Identity()
     _freeze_backbone(model)
     model.to(device)
@@ -250,7 +191,7 @@ def _load_convnext_base(config: BackboneConfig, device: torch.device) -> nn.Modu
 
 
 def _load_dinov2(config: BackboneConfig, device: torch.device) -> nn.Module:
-    model_id = config.version  # e.g. "dinov2_vitb14" or "dinov2_vitl14"
+    model_id = config.version
     if not model_id:
         raise BackboneUnavailableError(
             f"DINOv2 requires a non-empty 'version' field specifying the hub model "
@@ -270,7 +211,6 @@ def _load_dinov2(config: BackboneConfig, device: torch.device) -> nn.Module:
             f"(repo=facebookresearch/dinov2): {exc}. "
             f"Ensure weights are cached or network access is available."
         ) from exc
-    # DINOv2 hub base models output CLS token embeddings directly; no head removal needed.
     _freeze_backbone(model)
     model.to(device)
     _verify_embedding_dim(model, config, device)
@@ -321,7 +261,6 @@ def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Mod
 
     _TIMM_MODEL_NAME = "vit_small_patch14_reg4_dinov2"
 
-    # Verify the model is available in the installed timm version.
     available = [m for m in timm.list_models() if _TIMM_MODEL_NAME in m]
     if not available:
         raise BackboneUnavailableError(
@@ -329,7 +268,6 @@ def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Mod
             f"Upgrade timm: pip install 'timm>=0.9'."
         )
 
-    # Resolve checkpoint path: YAML field takes precedence, then env var.
     checkpoint_path = config.checkpoint_path or os.environ.get(
         "RETFOUND_GREEN_CHECKPOINT", ""
     )
@@ -350,15 +288,10 @@ def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Mod
             "releases/download/v0.1/retfoundgreen_statedict.pth"
         )
 
-    _input_size = config.input_size   # 224 for matched-224, 392 for native
-    _gpool = config.global_pool       # 'token' for CLS, 'avg' for native avg-pool
+    _input_size = config.input_size
+    _gpool = config.global_pool
     try:
         if _gpool == "avg":
-            # Native-392 avg-pool path: timm names the final LayerNorm 'fc_norm' when
-            # global_pool='avg', but the checkpoint uses 'norm' (CLS-token naming).
-            # Remap in-memory before load_state_dict.  No checkpoint file is modified.
-            # This is a 1:1 layer rename — 'norm' and 'fc_norm' are the same LayerNorm,
-            # just accessed via a different attribute name depending on pooling mode.
             _state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             for _k in ("norm.weight", "norm.bias"):
                 if _k in _state:
@@ -371,8 +304,6 @@ def _load_retfound_green(config: BackboneConfig, device: torch.device) -> nn.Mod
             )
             model.load_state_dict(_state, strict=True)
         else:
-            # Matched-224 CLS-token path: checkpoint key names match the 'token' pool
-            # model exactly — timm checkpoint_path strict-load works directly.
             model = timm.create_model(
                 _TIMM_MODEL_NAME,
                 img_size=(_input_size, _input_size),
@@ -443,7 +374,6 @@ def _load_dinov3_large(config: BackboneConfig, device: torch.device) -> nn.Modul
 
     _TIMM_MODEL_NAME = "vit_large_patch16_dinov3_qkvb"
 
-    # Verify the model is available in the installed timm version.
     available = [m for m in timm.list_models() if _TIMM_MODEL_NAME in m]
     if not available:
         raise BackboneUnavailableError(
@@ -451,7 +381,6 @@ def _load_dinov3_large(config: BackboneConfig, device: torch.device) -> nn.Modul
             f"Upgrade timm: pip install 'timm>=1.0.27'."
         )
 
-    # Resolve checkpoint path: YAML field takes precedence, then env var.
     checkpoint_path = config.checkpoint_path or os.environ.get(
         "RETINA_SCREEN_DINOV3_VITL16_WEIGHTS", ""
     )
@@ -470,22 +399,16 @@ def _load_dinov3_large(config: BackboneConfig, device: torch.device) -> nn.Modul
             "Verify the path to dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth."
         )
 
-    _input_size = config.input_size   # 224 for native-224 protocol
-    _gpool = config.global_pool       # 'token' for CLS-token
+    _input_size = config.input_size
+    _gpool = config.global_pool
 
     try:
-        # Step 1: Create model architecture (no checkpoint yet).
-        # Do NOT pass checkpoint_path= here — that bypasses checkpoint_filter_fn.
         model = timm.create_model(
             _TIMM_MODEL_NAME,
             img_size=(_input_size, _input_size),
             num_classes=0,
             global_pool=_gpool,
         )
-        # Step 2: Load checkpoint with the EVA filter_fn applied explicitly.
-        # eva.checkpoint_filter_fn detects DINOv3 via 'storage_tokens' in state_dict
-        # and performs all key remaps (storage_tokens→reg_token, ls*.gamma→gamma_*,
-        # qkv.bias split, rope_embed/bias_mask/mask_token discard).
         _timm_load_checkpoint(model, str(checkpoint_path), filter_fn=_dinov3_filter_fn)
     except Exception as exc:
         raise BackboneUnavailableError(
@@ -505,9 +428,6 @@ def _load_dinov3_large(config: BackboneConfig, device: torch.device) -> nn.Modul
     return model
 
 
-# ---------------------------------------------------------------------------
-# Backbone loading
-# ---------------------------------------------------------------------------
 
 
 def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
@@ -557,9 +477,6 @@ def load_backbone(config: BackboneConfig, device: torch.device) -> nn.Module:
     )
 
 
-# ---------------------------------------------------------------------------
-# Cache path helpers
-# ---------------------------------------------------------------------------
 
 
 def get_cache_dir(
@@ -589,9 +506,6 @@ def _sample_id_to_filename(sample_id: str) -> str:
     return f"{safe_stem}_{short_hash}.pt"
 
 
-# ---------------------------------------------------------------------------
-# Checksum
-# ---------------------------------------------------------------------------
 
 
 def compute_tensor_checksum(tensor: torch.Tensor) -> str:
@@ -613,9 +527,6 @@ def _validate_embedding_shape(
         )
 
 
-# ---------------------------------------------------------------------------
-# Embedding compaction
-# ---------------------------------------------------------------------------
 
 
 def _compact_embedding(raw: torch.Tensor) -> torch.Tensor:
@@ -630,9 +541,6 @@ def _compact_embedding(raw: torch.Tensor) -> torch.Tensor:
     return raw.detach().cpu().clone().contiguous()
 
 
-# ---------------------------------------------------------------------------
-# Save / load individual embeddings
-# ---------------------------------------------------------------------------
 
 
 def save_embedding(
@@ -702,9 +610,6 @@ def load_embedding(
     return tensor
 
 
-# ---------------------------------------------------------------------------
-# Manifest I/O
-# ---------------------------------------------------------------------------
 
 
 def write_embedding_manifest(records: list[dict], manifest_path: Path | str) -> None:
@@ -804,9 +709,6 @@ def _validate_unique_sample_ids(samples: list[CanonicalSample]) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# Batch extraction
-# ---------------------------------------------------------------------------
 
 
 def extract_embeddings(
@@ -892,7 +794,6 @@ def extract_embeddings(
             existing_row = manifest_indexes[existing_manifest_path].get(sample.sample_id)
 
             if not overwrite and existing_row is not None:
-                # Manifest row is the source of truth for validating cache reuse.
                 _validate_manifest_row_matches_request(
                     existing_row, sample, backbone_config, prep_hash
                 )
@@ -911,10 +812,9 @@ def extract_embeddings(
                         "re-extracting sample_id=%s path=%s",
                         sample.sample_id, cache_path,
                     )
-                # Extract embedding.
                 img = image_loader(sample)
-                tensor = pipeline(img).unsqueeze(0).to(device)   # (1, C, H, W)
-                embedding = _compact_embedding(backbone(tensor).squeeze(0))    # (embedding_dim,)
+                tensor = pipeline(img).unsqueeze(0).to(device)
+                embedding = _compact_embedding(backbone(tensor).squeeze(0))
                 _validate_embedding_shape(
                     embedding, backbone_config.embedding_dim, cache_path
                 )
@@ -935,7 +835,6 @@ def extract_embeddings(
                 "checksum": checksum,
             })
 
-    # Derive manifest path from first sample's cache directory.
     first_cache_dir = get_cache_dir(
         cache_root, backbone_config.name, samples[0].dataset_source, prep_hash
     )
@@ -948,9 +847,6 @@ def extract_embeddings(
     return manifest_path
 
 
-# ---------------------------------------------------------------------------
-# Cache integrity verification
-# ---------------------------------------------------------------------------
 
 
 def verify_cache_integrity(
@@ -990,7 +886,6 @@ def verify_cache_integrity(
             failed.append(sample_id)
             continue
 
-        # Structural validation: path components should include backbone and hash.
         path_parts = set(cache_path.parts)
         if row_backbone and row_backbone not in path_parts:
             logger.warning(

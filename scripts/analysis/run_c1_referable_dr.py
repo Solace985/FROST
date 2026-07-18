@@ -1,29 +1,3 @@
-"""
-run_c1_referable_dr.py -- Stage 8D-3.5 C1: Referable-DR binary endpoint analysis.
-
-Post-hoc analysis: recast dr_grade ordinal predictions into a clinically meaningful
-binary endpoint (referable-DR = grades ≥ 2) and compute AUROC/AUPRC with
-patient-level bootstrap 95% CIs for all 14 accepted evaluation cells.
-
-NO TRAINING. NO EXTRACTION. NO EVALUATION RERUN. NO PREDICTION MODIFICATION.
-
-Reads from:
-  outputs/evaluation/<timestamp>/predictions.npz  (read-only)
-  outputs/evaluation/<timestamp>/overall_metrics.json  (read-only)
-
-Writes to:
-  outputs/stage8d35_c1_referable_dr/<ISO-timestamp>/  (13 output files)
-
-Usage:
-  uv run python scripts/analysis/run_c1_referable_dr.py [options]
-
-Options:
-  --output-dir DIR       Override output directory (default: auto-timestamped)
-  --n-resamples N        Bootstrap resamples per cell (default: 2000)
-  --seed SEED            RNG seed (default: 42)
-  --strict               Exit nonzero on any WARNING in addition to BLOCKED
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,9 +12,6 @@ from typing import Any
 
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Bootstrap logger setup — must come before other imports that use logging
-# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -48,9 +19,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Project import — must be importable from repo root via uv run
-# ---------------------------------------------------------------------------
 from retina_screen.evaluation.referable_dr import (  # noqa: E402
     ZeroPositivesInResampleError,
     compute_referable_dr_bootstrap_ci,
@@ -60,12 +28,8 @@ from retina_screen.evaluation.referable_dr import (  # noqa: E402
     REFERABLE_DR_TASK_METADATA,
 )
 
-# ---------------------------------------------------------------------------
-# Output file manifest
-# ---------------------------------------------------------------------------
 
 REQUIRED_OUTPUT_FILES: list[str] = [
-    # Canonical
     "c1_referable_dr_report.md",
     "c1_referable_dr_manifest.json",
     "referable_dr_cell_metrics.csv",
@@ -75,7 +39,6 @@ REQUIRED_OUTPUT_FILES: list[str] = [
     "dr_grade_5class_limitation_table.csv",
     "dr_grade_5class_limitation_table.json",
     "input_artifact_checksums.json",
-    # Compatibility aliases (content-equivalent to canonical)
     "c1_results.csv",
     "c1_results.json",
     "c1_pair_deltas.csv",
@@ -84,12 +47,8 @@ REQUIRED_OUTPUT_FILES: list[str] = [
 
 assert len(REQUIRED_OUTPUT_FILES) == 13, "REQUIRED_OUTPUT_FILES must have exactly 13 entries"
 
-# ---------------------------------------------------------------------------
-# Cell registry — all 14 accepted evaluation cells
-# ---------------------------------------------------------------------------
 
 CELL_REGISTRY: dict[str, dict[str, str]] = {
-    # Main matched-protocol matrix (12 cells)
     "c01": {
         "backbone": "resnet50",
         "head": "mt",
@@ -174,7 +133,6 @@ CELL_REGISTRY: dict[str, dict[str, str]] = {
         "display": "DINOv3-Large LP",
         "eval_dir": "outputs/evaluation/20260527_091902",
     },
-    # Off-protocol comparator (2 cells — RETFound native-392)
     "c13": {
         "backbone": "retfound_green_native392",
         "head": "mt",
@@ -191,12 +149,8 @@ CELL_REGISTRY: dict[str, dict[str, str]] = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Pairwise comparison registry — 20 pairs across 5 groups
-# ---------------------------------------------------------------------------
 
 PAIRWISE_COMPARISONS: list[dict[str, str]] = [
-    # Group A — Within-backbone MT vs LP (7 pairs)
     {"group": "A", "label": "ResNet-50 MT vs LP",               "cell_a": "c01", "cell_b": "c02"},
     {"group": "A", "label": "ConvNeXt-Base MT vs LP",           "cell_a": "c03", "cell_b": "c04"},
     {"group": "A", "label": "DINOv2-Base MT vs LP",             "cell_a": "c05", "cell_b": "c06"},
@@ -204,20 +158,16 @@ PAIRWISE_COMPARISONS: list[dict[str, str]] = [
     {"group": "A", "label": "RETFound matched-224 MT vs LP",    "cell_a": "c09", "cell_b": "c10"},
     {"group": "A", "label": "DINOv3-Large MT vs LP",            "cell_a": "c11", "cell_b": "c12"},
     {"group": "A", "label": "RETFound native-392 MT vs LP",     "cell_a": "c13", "cell_b": "c14"},
-    # Group B — Top-tier MT backbone comparisons (5 pairs)
     {"group": "B", "label": "DINOv3-Large MT vs DINOv2-Large MT",  "cell_a": "c11", "cell_b": "c07"},
     {"group": "B", "label": "DINOv3-Large MT vs DINOv2-Base MT",   "cell_a": "c11", "cell_b": "c05"},
     {"group": "B", "label": "DINOv2-Large MT vs DINOv2-Base MT",   "cell_a": "c07", "cell_b": "c05"},
     {"group": "B", "label": "RETFound matched-224 MT vs DINOv2-Large MT", "cell_a": "c09", "cell_b": "c07"},
     {"group": "B", "label": "RETFound matched-224 MT vs DINOv3-Large MT", "cell_a": "c09", "cell_b": "c11"},
-    # Group C — LP backbone comparisons (3 pairs)
     {"group": "C", "label": "DINOv3-Large LP vs DINOv2-Large LP",  "cell_a": "c12", "cell_b": "c08"},
     {"group": "C", "label": "DINOv3-Large LP vs DINOv2-Base LP",   "cell_a": "c12", "cell_b": "c06"},
     {"group": "C", "label": "DINOv2-Large LP vs DINOv2-Base LP",   "cell_a": "c08", "cell_b": "c06"},
-    # Group D — RETFound protocol delta (2 pairs)
     {"group": "D", "label": "RETFound native-392 MT vs matched-224 MT", "cell_a": "c13", "cell_b": "c09"},
     {"group": "D", "label": "RETFound native-392 LP vs matched-224 LP", "cell_a": "c14", "cell_b": "c10"},
-    # Group E — Off-protocol comparator vs top-tier MT (3 pairs)
     {"group": "E", "label": "RETFound native-392 MT vs DINOv2-Large MT",  "cell_a": "c13", "cell_b": "c07"},
     {"group": "E", "label": "RETFound native-392 MT vs DINOv3-Large MT",  "cell_a": "c13", "cell_b": "c11"},
     {"group": "E", "label": "RETFound native-392 MT vs DINOv2-Base MT",   "cell_a": "c13", "cell_b": "c05"},
@@ -225,15 +175,9 @@ PAIRWISE_COMPARISONS: list[dict[str, str]] = [
 
 assert len(PAIRWISE_COMPARISONS) == 20, "PAIRWISE_COMPARISONS must have exactly 20 entries"
 
-# ---------------------------------------------------------------------------
-# Spot-check cells for PHASE 0 / GATE P (3 cells)
-# ---------------------------------------------------------------------------
-SPOT_CHECK_CELLS = ["c01", "c07", "c11"]  # ResNet-50 MT, DINOv2-Large MT, DINOv3-Large MT
+SPOT_CHECK_CELLS = ["c01", "c07", "c11"]
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _sha256_file(path: Path) -> str:
@@ -250,11 +194,11 @@ def _load_cell(cell_id: str) -> dict[str, Any]:
     npz_path = Path(meta["eval_dir"]) / "predictions.npz"
     data = np.load(str(npz_path), allow_pickle=True)
     return {
-        "logit_dr_grade": data["logit__dr_grade"],       # (N,5) float32
-        "label_dr_grade": data["label__dr_grade"],       # (N,) float64
-        "mask_dr_grade":  data["mask__dr_grade"],        # (N,) float64
-        "patient_id":     data["patient_id"],            # (N,)
-        "sample_id":      data["sample_id"],             # (N,)
+        "logit_dr_grade": data["logit__dr_grade"],
+        "label_dr_grade": data["label__dr_grade"],
+        "mask_dr_grade":  data["mask__dr_grade"],
+        "patient_id":     data["patient_id"],
+        "sample_id":      data["sample_id"],
     }
 
 
@@ -292,7 +236,7 @@ def _cell_result_to_row(
         "backbone": cell_meta["backbone"],
         "head": cell_meta["head"],
         "protocol": cell_meta["protocol"],
-        "n_valid": 1623,  # all cells confirmed n_valid=1623
+        "n_valid": 1623,
         "n_referable_positive": n_pos,
         "auroc_point": auroc_task.point_estimate if auroc_task else None,
         "auroc_ci_lo": auroc_task.ci_lo if auroc_task else None,
@@ -338,9 +282,6 @@ def _delta_result_to_rows(
     return rows
 
 
-# ---------------------------------------------------------------------------
-# Main driver
-# ---------------------------------------------------------------------------
 
 
 def main(args: argparse.Namespace) -> int:
@@ -360,9 +301,6 @@ def main(args: argparse.Namespace) -> int:
     warnings: list[str] = []
     blocked: list[str] = []
 
-    # -----------------------------------------------------------------------
-    # PHASE 0 — Pre-execution file verification + input checksums
-    # -----------------------------------------------------------------------
     logger.info("=== PHASE 0: Pre-execution verification ===")
 
     checksums: dict[str, str] = {}
@@ -380,9 +318,6 @@ def main(args: argparse.Namespace) -> int:
         logger.error("BLOCKED in PHASE 0 — aborting.")
         return 2
 
-    # -----------------------------------------------------------------------
-    # GATE M — Verify n_valid and n_referable for all cells
-    # -----------------------------------------------------------------------
     logger.info("=== GATE M: n_valid and n_referable verification ===")
 
     cell_data: dict[str, dict[str, Any]] = {}
@@ -404,9 +339,6 @@ def main(args: argparse.Namespace) -> int:
         logger.error("BLOCKED in GATE M — aborting.")
         return 2
 
-    # -----------------------------------------------------------------------
-    # GATE P — Spot-check point estimate reproducibility
-    # -----------------------------------------------------------------------
     logger.info("=== GATE P: Point estimate spot-check ===")
 
     spot_check_results: dict[str, dict[str, Any]] = {}
@@ -414,7 +346,6 @@ def main(args: argparse.Namespace) -> int:
         d = cell_data[cell_id]
         score = compute_referable_dr_score(d["logit_dr_grade"])
         ref_label = compute_referable_dr_label(d["label_dr_grade"])
-        # Manual spot-check: first 10 samples
         first10_scores = score[:10].tolist()
         first10_labels = ref_label[:10].tolist()
         spot_check_results[cell_id] = {
@@ -427,9 +358,6 @@ def main(args: argparse.Namespace) -> int:
             [f"{x:.4f}" for x in first10_scores],
         )
 
-    # -----------------------------------------------------------------------
-    # PHASE 1 — Per-cell bootstrap CIs (14 cells)
-    # -----------------------------------------------------------------------
     logger.info("=== PHASE 1: Per-cell referable-DR bootstrap CIs ===")
 
     cell_rows: list[dict[str, Any]] = []
@@ -478,9 +406,6 @@ def main(args: argparse.Namespace) -> int:
         row = _cell_result_to_row(cell_id, meta, ci_result, n_referable)
         cell_rows.append(row)
 
-    # -----------------------------------------------------------------------
-    # PHASE 2 — Pairwise delta CIs (20 pairs)
-    # -----------------------------------------------------------------------
     logger.info("=== PHASE 2: Pairwise delta CIs (%d pairs) ===", len(PAIRWISE_COMPARISONS))
 
     delta_rows: list[dict[str, Any]] = []
@@ -525,9 +450,6 @@ def main(args: argparse.Namespace) -> int:
             )
         delta_rows.extend(rows)
 
-    # -----------------------------------------------------------------------
-    # PHASE 3 — 5-class ordinal limitation table
-    # -----------------------------------------------------------------------
     logger.info("=== PHASE 3: 5-class limitation table ===")
 
     limitation_rows: list[dict[str, Any]] = []
@@ -556,47 +478,35 @@ def main(args: argparse.Namespace) -> int:
             row.get("dr5_balanced_accuracy") or float("nan"),
         )
 
-    # -----------------------------------------------------------------------
-    # PHASE 4 — Write output files
-    # -----------------------------------------------------------------------
     logger.info("=== PHASE 4: Writing output files ===")
 
-    # --- Input artifact checksums ---
     checksums_path = out_dir / "input_artifact_checksums.json"
     with open(checksums_path, "w", encoding="utf-8") as f:
         json.dump({"checksums": checksums, "algorithm": "sha256"}, f, indent=2)
 
-    # --- Cell metrics (canonical) ---
     cell_metrics_csv = out_dir / "referable_dr_cell_metrics.csv"
     _write_csv(cell_rows, cell_metrics_csv)
     cell_metrics_json = out_dir / "referable_dr_cell_metrics.json"
     with open(cell_metrics_json, "w", encoding="utf-8") as f:
         json.dump(cell_rows, f, indent=2)
 
-    # Compatibility alias
     _copy_file(cell_metrics_csv, out_dir / "c1_results.csv")
     _copy_file(cell_metrics_json, out_dir / "c1_results.json")
 
-    # --- Pairwise deltas (canonical) ---
     deltas_csv = out_dir / "referable_dr_pairwise_deltas.csv"
     _write_csv(delta_rows, deltas_csv)
     deltas_json = out_dir / "referable_dr_pairwise_deltas.json"
     with open(deltas_json, "w", encoding="utf-8") as f:
         json.dump(delta_rows, f, indent=2)
 
-    # Compatibility alias
     _copy_file(deltas_csv, out_dir / "c1_pair_deltas.csv")
 
-    # --- 5-class limitation table ---
     limit_csv = out_dir / "dr_grade_5class_limitation_table.csv"
     _write_csv(limitation_rows, limit_csv)
     limit_json = out_dir / "dr_grade_5class_limitation_table.json"
     with open(limit_json, "w", encoding="utf-8") as f:
         json.dump(limitation_rows, f, indent=2)
 
-    # -----------------------------------------------------------------------
-    # PHASE 5 — Write report and manifest
-    # -----------------------------------------------------------------------
     logger.info("=== PHASE 5: Writing report and manifest ===")
 
     report_text = _build_report(
@@ -616,10 +526,8 @@ def main(args: argparse.Namespace) -> int:
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report_text)
 
-    # Compatibility alias
     _copy_file(report_path, out_dir / "c1_report.md")
 
-    # Manifest
     manifest = {
         "stage": "8D-3.5 C1",
         "run_timestamp_utc": run_ts,
@@ -637,7 +545,6 @@ def main(args: argparse.Namespace) -> int:
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-    # Verify all required output files exist
     missing_outputs: list[str] = []
     for fname in REQUIRED_OUTPUT_FILES:
         if not (out_dir / fname).exists():
@@ -659,9 +566,6 @@ def main(args: argparse.Namespace) -> int:
     return 0
 
 
-# ---------------------------------------------------------------------------
-# File I/O helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_csv(rows: list[dict[str, Any]], path: Path) -> None:
@@ -679,9 +583,6 @@ def _copy_file(src: Path, dst: Path) -> None:
     dst.write_bytes(src.read_bytes())
 
 
-# ---------------------------------------------------------------------------
-# Report builder
-# ---------------------------------------------------------------------------
 
 
 def _build_report(
@@ -707,11 +608,9 @@ def _build_report(
     def blank() -> None:
         lines.append("")
 
-    # 1. Title
     lines.append(f"# Stage 8D-3.5 C1 — Referable-DR Binary Endpoint Analysis\n")
     lines.append(f"**Generated:** {run_ts}  \n**Seed:** {seed}  \n**Bootstrap resamples:** {n_resamples}\n")
 
-    # 2. Stage context and purpose
     h(2, "Stage Context and Purpose")
     p(
         "Stage 8D-3.5 C1 is a post-hoc analysis that recasts the BRSET dr_grade ordinal "
@@ -726,7 +625,6 @@ def _build_report(
         "embedding extraction, or evaluation rerun was performed.",
     )
 
-    # 3. Referable-DR definition
     h(2, "Referable-DR Definition")
     lines.append("| Grade | Description | Referable? |\n|---|---|---|")
     lines.append("| 0 | No DR | No (nonreferable) |")
@@ -742,7 +640,6 @@ def _build_report(
         "**Class breakdown:** grade0=1517, grade1=33, grade2=11, grade3=22, grade4=40"
     )
 
-    # 4. Data provenance
     h(2, "Data Provenance")
     p(
         "All predictions were produced by Stage 8D-3.5 A1 patch "
@@ -753,7 +650,6 @@ def _build_report(
     blank()
     p("**Privacy:** No raw patient IDs, image filenames, or metadata rows appear in this report.")
 
-    # 5. Computation method
     h(2, "Computation Method")
     lines.append(
         "- Score: `softmax(logit__dr_grade, axis=1)[:,2:5].sum(axis=1)` (numerically stable)  \n"
@@ -765,7 +661,6 @@ def _build_report(
         "- Paired delta: same bootstrap patient resamples applied to both cells"
     )
 
-    # 6. Per-cell AUROC table
     h(2, "Per-Cell Referable-DR AUROC (with 95% CI)")
     lines.append("| Cell | Model | AUROC | 95% CI | AUROC status |")
     lines.append("|------|-------|-------|--------|--------------|")
@@ -780,7 +675,6 @@ def _build_report(
             f"| {_fmt(row['auroc_point'])} | {ci_str} | {row['auroc_status']} |"
         )
 
-    # 7. Per-cell AUPRC table
     h(2, "Per-Cell Referable-DR AUPRC (with 95% CI)")
     lines.append("| Cell | Model | AUPRC | 95% CI | AUPRC status |")
     lines.append("|------|-------|-------|--------|--------------|")
@@ -795,7 +689,6 @@ def _build_report(
             f"| {_fmt(row['auprc_point'])} | {ci_str} | {row['auprc_status']} |"
         )
 
-    # 8. Bootstrap CI validity
     h(2, "Bootstrap CI Validity")
     ok_count = sum(1 for r in cell_rows if r["auroc_status"] == "ok")
     lines.append(
@@ -805,7 +698,6 @@ def _build_report(
         f"- ZeroPositivesInResampleError: not encountered (n_pos=73 across 854 patients)"
     )
 
-    # 9. Pairwise delta tables (Groups A–E)
     h(2, "Pairwise Delta CIs — Group A: Within-Backbone MT vs LP")
     _append_delta_table(lines, delta_rows, "A")
 
@@ -821,7 +713,6 @@ def _build_report(
     h(2, "Pairwise Delta CIs — Group E: Off-Protocol Comparator vs Top-Tier MT")
     _append_delta_table(lines, delta_rows, "E")
 
-    # 13. 5-class ordinal limitation context
     h(2, "5-Class Ordinal dr_grade Limitation Table")
     p(
         "The 5-class dr_grade protocol is retained as a documented limitation. "
@@ -840,7 +731,6 @@ def _build_report(
             f"| {_fmt(row.get('dr5_balanced_accuracy'))} |"
         )
 
-    # 14. F3 activation decision support
     h(2, "F3 Activation Decision Support")
     top_auroc_row = max(
         (r for r in cell_rows if r["auroc_point"] is not None),
@@ -873,7 +763,6 @@ def _build_report(
         blank()
         p("Note: The final F3 decision is deferred to the project lead. This section presents findings only.")
 
-    # 15. Privacy statement
     h(2, "Privacy Statement")
     p(
         "This report contains only aggregate statistics. No raw patient IDs, "
@@ -881,13 +770,11 @@ def _build_report(
         "in this report or its output files. BRSET is credentialed PhysioNet data."
     )
 
-    # 16. Input artifact checksums reference
     h(2, "Input Artifact Checksums Reference")
     p(f"SHA-256 checksums for all {len(CELL_REGISTRY) * 3} input files are recorded in:")
     blank()
     lines.append(f"  `{out_dir / 'input_artifact_checksums.json'}`")
 
-    # 17. Spot-check verification
     h(2, "GATE P Spot-Check Verification")
     p("First 10 sample referable-DR scores for 3 spot-check cells:")
     blank()
@@ -897,7 +784,6 @@ def _build_report(
         lines.append(f"  Labels:  {sc['first_10_labels']}")
         blank()
 
-    # Warnings/status
     if warnings:
         h(2, "Warnings")
         for w in warnings:
@@ -915,7 +801,6 @@ def _append_delta_table(lines: list[str], delta_rows: list[dict[str, Any]], grou
     if not group_rows:
         lines.append("*No pairs in this group.*")
         return
-    # Show one AUROC row per pair
     auroc_rows = [r for r in group_rows if r["metric"] == "auroc"]
     lines.append("| Pair | A | B | AUROC Δ | 95% CI | Status |")
     lines.append("|------|---|---|---------|--------|--------|")
@@ -931,9 +816,6 @@ def _append_delta_table(lines: list[str], delta_rows: list[dict[str, Any]], grou
         )
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

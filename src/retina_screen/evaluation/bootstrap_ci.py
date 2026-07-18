@@ -1,33 +1,3 @@
-"""
-bootstrap_ci.py -- Patient-level bootstrap confidence intervals for evaluation metrics.
-
-Stage 8D-3.5 A1 implementation.
-
-Design references:
-  - docs/preflights/A1_bootstrap_ci_preflight.md §6, §8, §9
-  - docs/paper_framing_and_findings.md F8
-
-**Resampling unit:** patient (not sample). A patient drawn k times in a resample
-contributes all their images k times.
-
-**Supported CI method:** percentile bootstrap only (no BCa, basic, or studentized).
-
-**Score convention (from preflight §9):**
-  - Binary tasks: raw logits stored; apply sigmoid before AUROC.
-  - Ordinal tasks: raw per-class logits; apply argmax for class-prediction metrics.
-
-**Masking convention (from preflight §8):**
-  - mask == 1.0 → observed; included in metric computation.
-  - mask == 0.0 → missing; excluded unconditionally.
-
-**DeLong:** NOT implemented. Paired percentile bootstrap is the uniform A1 delta method.
-
-**Module invariants:**
-  - No backbone/task/dataset name strings in conditional logic.
-  - All task-type branching is driven by task_metadata passed in.
-  - Synthetic names may appear in tests only.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -45,9 +15,6 @@ from sklearn.metrics import (
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Custom exceptions
-# ---------------------------------------------------------------------------
 
 
 class ZeroPositivesInResampleError(Exception):
@@ -69,9 +36,6 @@ class ZeroPositivesInResampleError(Exception):
         )
 
 
-# ---------------------------------------------------------------------------
-# Result dataclasses
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -209,9 +173,6 @@ class DeltaCIResult:
     seed: int
 
 
-# ---------------------------------------------------------------------------
-# Internal metric helpers (no task-name branching)
-# ---------------------------------------------------------------------------
 
 
 def _compute_binary_auroc(
@@ -267,7 +228,6 @@ def _compute_ordinal_metrics(
     n = len(y_true)
     if n == 0:
         return {"accuracy": None, "macro_f1": None, "balanced_accuracy": None}
-    # accuracy is always computable
     correct = int((y_true == y_pred).sum())
     results["accuracy"] = correct / n
     if len(np.unique(y_true)) < 2:
@@ -281,9 +241,6 @@ def _compute_ordinal_metrics(
     return results
 
 
-# ---------------------------------------------------------------------------
-# Patient-level bootstrap index builder (shared by cell and delta CI)
-# ---------------------------------------------------------------------------
 
 
 def _build_patient_lookup(
@@ -338,7 +295,6 @@ def _build_patient_resample_indices(
     if lookup is not None:
         parts = [lookup[unique_patients[pi]] for pi in sampled_patient_idx]
         return np.concatenate(parts) if parts else np.array([], dtype=np.int64)
-    # Fallback: slow path kept for correctness verification
     indices: list[int] = []
     for pi in sampled_patient_idx:
         pid = unique_patients[pi]
@@ -346,9 +302,6 @@ def _build_patient_resample_indices(
     return np.array(indices, dtype=np.int64)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def compute_cell_ci(
@@ -396,7 +349,6 @@ def compute_cell_ci(
     n_patients = len(unique_patients)
     n_samples = len(patient_ids)
 
-    # Determine all (task, metric_name) pairs to compute
     task_metric_pairs: list[tuple[str, str]] = []
     for task_name, meta in task_metadata.items():
         ttype = meta["task_type"]
@@ -409,19 +361,16 @@ def compute_cell_ci(
             task_metric_pairs.append((task_name, "macro_f1"))
             task_metric_pairs.append((task_name, "balanced_accuracy"))
 
-    # Always add binary macro-AUROC as a synthetic aggregate metric
     binary_tasks = [t for t, m in task_metadata.items() if m["task_type"] == "binary"]
     has_macro = len(binary_tasks) > 0
     if has_macro:
         task_metric_pairs.append(("__macro__", "binary_macro_auroc"))
 
-    # Storage for bootstrap distributions: (task_metric_key) → list of float
     distrib: dict[str, list[float]] = {
         f"{tn}__{mn}": [] for tn, mn in task_metric_pairs
     }
     skip_counts: dict[str, int] = {k: 0 for k in distrib}
 
-    # Pre-compute point estimates (unresampled, for GATE P)
     point_ests: dict[str, float | None] = {}
     for task_name, meta in task_metadata.items():
         ttype = meta["task_type"]
@@ -452,17 +401,15 @@ def compute_cell_ci(
             float(np.mean(valid_macro)) if valid_macro else None
         )
 
-    # Precompute patient → sample-index lookup for O(n_patients) per resample
     patient_lookup = _build_patient_lookup(patient_ids, unique_patients)
 
-    # Bootstrap loop
     for r in range(n_resamples):
         sampled_idx = rng.choice(n_patients, size=n_patients, replace=True)
         indices = _build_patient_resample_indices(
             patient_ids, unique_patients, sampled_idx, lookup=patient_lookup
         )
 
-        resample_aurocs: list[float] = []  # for macro computation
+        resample_aurocs: list[float] = []
 
         for task_name, meta in task_metadata.items():
             ttype = meta["task_type"]
@@ -498,7 +445,6 @@ def compute_cell_ci(
                     else:
                         distrib[key].append(v)
 
-        # Macro AUROC for this resample (mean over all binary tasks with valid values)
         if has_macro:
             macro_key = "__macro____binary_macro_auroc"
             if len(resample_aurocs) == len(binary_tasks):
@@ -506,19 +452,17 @@ def compute_cell_ci(
             else:
                 skip_counts[macro_key] += 1
 
-    # n_included per task (unresampled, mask==1.0)
     n_included: dict[str, int] = {
         task_name: int((masks[task_name] == 1.0).sum())
         for task_name in task_metadata
     }
 
-    # Build TaskCIResult list
     task_ci_results: list[TaskCIResult] = []
     for task_name, metric_name in task_metric_pairs:
         if task_name == "__macro__":
             key = "__macro____binary_macro_auroc"
             pt = point_ests.get("__macro____binary_macro_auroc")
-            n_inc = n_samples  # macro uses all binary tasks
+            n_inc = n_samples
             t_type = "binary"
         else:
             key = f"{task_name}__{metric_name}"
@@ -564,7 +508,7 @@ def compute_cell_ci(
             ))
 
     return CellCIResult(
-        cell_name="",  # caller sets this
+        cell_name="",
         tasks=task_ci_results,
         n_resamples=n_resamples,
         seed=seed,
@@ -616,7 +560,6 @@ def compute_paired_delta_ci(
     n_patients = len(unique_patients)
     n_samples = len(patient_ids_a)
 
-    # Task-metric pairs (same structure as compute_cell_ci)
     task_metric_pairs: list[tuple[str, str]] = []
     for task_name, meta in task_metadata.items():
         ttype = meta["task_type"]
@@ -638,7 +581,6 @@ def compute_paired_delta_ci(
     }
     skip_counts: dict[str, int] = {k: 0 for k in delta_distrib}
 
-    # Point estimates (unresampled)
     def _point_for_task_metric(
         preds: dict[str, np.ndarray],
         lbls: dict[str, np.ndarray],
@@ -666,16 +608,11 @@ def compute_paired_delta_ci(
     pt_a = _point_for_task_metric(predictions_a, labels_a, masks_a)
     pt_b = _point_for_task_metric(predictions_b, labels_b, masks_b)
 
-    # Precompute patient → sample-index lookup for both cells.
-    # Both cells share the same patient set; build separate lookups so the
-    # function remains correct even when sample orderings differ.
     lookup_a = _build_patient_lookup(patient_ids_a, unique_patients)
     lookup_b = _build_patient_lookup(patient_ids_b, unique_patients)
 
-    # Bootstrap loop with SHARED resample indices
     for r in range(n_resamples):
         sampled_idx = rng.choice(n_patients, size=n_patients, replace=True)
-        # Indices for cell A (and B — same patient IDs)
         idx_a = _build_patient_resample_indices(
             patient_ids_a, unique_patients, sampled_idx, lookup=lookup_a
         )
@@ -732,7 +669,6 @@ def compute_paired_delta_ci(
                     else:
                         skip_counts[key] += 1
 
-        # Macro AUROC delta
         if binary_tasks:
             macro_key = "__macro____binary_macro_auroc"
             if len(macro_a_vals) == len(binary_tasks) and len(macro_b_vals) == len(binary_tasks):
@@ -742,7 +678,6 @@ def compute_paired_delta_ci(
             else:
                 skip_counts[macro_key] += 1
 
-    # Build TaskDeltaCIResult list
     delta_results: list[TaskDeltaCIResult] = []
     for task_name, metric_name in task_metric_pairs:
         if task_name == "__macro__":
@@ -779,7 +714,6 @@ def compute_paired_delta_ci(
         else:
             d_lo = float(np.percentile(delta_vals, percentile_lo))
             d_hi = float(np.percentile(delta_vals, percentile_hi))
-            # "supported" if CI fully excludes zero (both bounds same sign, non-zero)
             if d_lo > 0.0 or d_hi < 0.0:
                 status = "supported"
             else:
@@ -796,8 +730,8 @@ def compute_paired_delta_ci(
             ))
 
     return DeltaCIResult(
-        cell_a="",  # caller sets this
-        cell_b="",  # caller sets this
+        cell_a="",
+        cell_b="",
         tasks=delta_results,
         n_resamples=n_resamples,
         seed=seed,

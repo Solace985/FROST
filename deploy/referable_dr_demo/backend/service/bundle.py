@@ -1,27 +1,3 @@
-"""bundle.py -- local deployment-bundle discovery and fail-closed validation.
-
-Discovers the accepted RETFound-Green native-392 + MultiTaskHead artifacts from
-their existing local locations (resolved via environment variables, with
-canonical fallbacks), validates them against the frozen expected specification,
-and produces an immutable :class:`DeploymentBundle`.
-
-Nothing here trains, extracts, copies, moves, or re-saves any artifact. It reads
-checkpoints to hash them and to read the head's task structure; it never writes
-to any pipeline location. The generated manifest is written only to the ignored
-``deploy/referable_dr_demo/.local/`` directory by the analysis builder.
-
-Fail-closed conditions (raise ``BundleValidationError``):
-  - a required checkpoint is missing
-  - a checkpoint SHA-256 does not match the expected/recorded value
-  - expected embedding_dim is not 384
-  - pooling is not native average pooling
-  - native input size is not 392
-  - task ordering differs from the accepted/canonical ordering
-  - the head checkpoint does not load into a MultiTaskHead
-  - dr_grade output shape is not 5
-  - the canonical loader / preprocessing route cannot be verified
-"""
-
 from __future__ import annotations
 
 import json
@@ -48,30 +24,22 @@ from .provenance import (
 
 logger = logging.getLogger(__name__)
 
-# --------------------------------------------------------------------------
-# Frozen expected specification (the accepted deployment candidate)
-# --------------------------------------------------------------------------
 BUNDLE_VERSION = "frost-referable-dr-1"
 BACKBONE_IDENTIFIER = "retfound_green_native392"
 MODEL_FAMILY = "retfound_green"
 NATIVE_PROTOCOL = "native_392_avg_pool"
 NATIVE_INPUT_SIZE = 392
-NATIVE_POOLING = "average"          # timm global_pool="avg"
+NATIVE_POOLING = "average"
 EXPECTED_EMBEDDING_DIM = 384
 HEAD_TYPE = "MultiTaskHead"
 DR_GRADE_TASK_KEY = "dr_grade"
 DR_GRADE_OUTPUT_SHAPE = 5
-BACKBONE_MODEL_TYPE = "retfound_green"   # retina_screen BackboneConfig.model_type
-BACKBONE_GLOBAL_POOL = "avg"             # retina_screen BackboneConfig.global_pool
+BACKBONE_MODEL_TYPE = "retfound_green"
+BACKBONE_GLOBAL_POOL = "avg"
 
-# --------------------------------------------------------------------------
-# Canonical artifact locations (relative to repo root; runs/, models/, cache/,
-# outputs/ are all git-ignored, so no private data is committed). Environment
-# variables take precedence so private paths are never hardcoded as the source.
-# --------------------------------------------------------------------------
 ENV_BACKBONE_CKPT = "RETINA_SCREEN_RETF_GREEN_CHECKPOINT"
 ENV_HEAD_CKPT = "RETINA_SCREEN_RETF_NATIVE392_MT_CHECKPOINT"
-ENV_CANONICAL_BACKBONE_CKPT = "RETFOUND_GREEN_CHECKPOINT"  # canonical pipeline var
+ENV_CANONICAL_BACKBONE_CKPT = "RETFOUND_GREEN_CHECKPOINT"
 
 _DEFAULT_BACKBONE_CKPT = REPO_ROOT / "models" / "retfoundgreen_statedict.pth"
 _DEFAULT_HEAD_RUN_DIR = REPO_ROOT / "runs" / "train" / "brset_20260525_113425"
@@ -103,7 +71,6 @@ class DeploymentBundle:
     head_checkpoint: Path
     task_order: tuple[str, ...]
 
-    # ---- typed accessors -------------------------------------------------
     @property
     def bundle_version(self) -> str:
         return self.manifest["bundle_version"]
@@ -145,9 +112,6 @@ class DeploymentBundle:
         }
 
 
-# --------------------------------------------------------------------------
-# Discovery
-# --------------------------------------------------------------------------
 def _first_existing(*candidates: Path | str | None) -> Path | None:
     for c in candidates:
         if not c:
@@ -193,9 +157,6 @@ def discover_artifacts() -> ArtifactPaths:
     )
 
 
-# --------------------------------------------------------------------------
-# Head-checkpoint introspection
-# --------------------------------------------------------------------------
 def _load_head_state_dict(head_ckpt: Path) -> dict[str, Any]:
     ensure_src_importable()
     import torch  # noqa: PLC0415
@@ -243,9 +204,6 @@ def _expected_backbone_sha() -> str | None:
     return str(sha).upper() if sha else None
 
 
-# --------------------------------------------------------------------------
-# Build (full validation) — used by the analysis builder
-# --------------------------------------------------------------------------
 def build_bundle(*, validate_backbone_forward: bool = True) -> dict[str, Any]:
     """Discover, validate, and return the deployment-bundle manifest dict.
 
@@ -255,7 +213,6 @@ def build_bundle(*, validate_backbone_forward: bool = True) -> dict[str, Any]:
     """
     paths = discover_artifacts()
 
-    # --- backbone hash gate ---
     backbone_sha = sha256_file(paths.backbone_checkpoint)
     expected_sha = _expected_backbone_sha()
     if expected_sha and backbone_sha != expected_sha:
@@ -265,7 +222,6 @@ def build_bundle(*, validate_backbone_forward: bool = True) -> dict[str, Any]:
             "This is not the accepted RETFound-Green checkpoint."
         )
 
-    # --- head structure gate ---
     state = _load_head_state_dict(paths.head_checkpoint)
     task_order = _task_order_from_state_dict(state)
     if DR_GRADE_TASK_KEY not in task_order:
@@ -280,7 +236,6 @@ def build_bundle(*, validate_backbone_forward: bool = True) -> dict[str, Any]:
             f"checkpoint={sorted(task_order)}, canonical={sorted(canonical_set)}."
         )
 
-    # --- build the head and confirm strict load + dr_grade output dim == 5 ---
     ensure_src_importable()
     import torch  # noqa: PLC0415
 
@@ -296,7 +251,7 @@ def build_bundle(*, validate_backbone_forward: bool = True) -> dict[str, Any]:
             f"Constructed head is {type(head).__name__}, expected {HEAD_TYPE}."
         )
     try:
-        head.load_state_dict(state)  # strict=True
+        head.load_state_dict(state)
     except Exception as exc:  # noqa: BLE001
         raise BundleValidationError(
             f"Head checkpoint does not load strictly into a {HEAD_TYPE} with "
@@ -313,11 +268,9 @@ def build_bundle(*, validate_backbone_forward: bool = True) -> dict[str, Any]:
         )
     head_sha = sha256_file(paths.head_checkpoint)
 
-    # --- backbone live forward gate (pooling + dim) ---
     if validate_backbone_forward:
         _validate_backbone_forward(paths.backbone_checkpoint, task_order)
 
-    # --- provenance of configs ---
     resolved_config_sha = (
         sha256_file(paths.resolved_config) if paths.resolved_config else None
     )
@@ -389,7 +342,6 @@ def _validate_backbone_forward(backbone_ckpt: Path, task_order: list[str]) -> No
     )
     backbone = load_backbone(cfg, torch.device("cpu"))
     backbone.eval()
-    # Confirm frozen.
     if any(p.requires_grad for p in backbone.parameters()):
         raise BundleValidationError("Backbone parameters are not all frozen.")
     with torch.inference_mode():
@@ -402,9 +354,6 @@ def _validate_backbone_forward(backbone_ckpt: Path, task_order: list[str]) -> No
         )
 
 
-# --------------------------------------------------------------------------
-# Persist / load the local manifest
-# --------------------------------------------------------------------------
 def write_bundle(manifest: dict[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -431,7 +380,6 @@ def validate_bundle_against_artifacts(manifest: dict[str, Any]) -> DeploymentBun
     Fail-closed on any drift (missing file, hash mismatch, dim/pooling/size/task
     differences). Returns an immutable :class:`DeploymentBundle` on success.
     """
-    # frozen-spec invariants
     _check(manifest.get("expected_embedding_dim") == EXPECTED_EMBEDDING_DIM,
            f"bundle embedding_dim must be {EXPECTED_EMBEDDING_DIM}.")
     _check(manifest.get("native_input_size") == NATIVE_INPUT_SIZE,
@@ -454,7 +402,6 @@ def validate_bundle_against_artifacts(manifest: dict[str, Any]) -> DeploymentBun
     _check(backbone_ckpt.exists(), f"backbone checkpoint missing: {backbone_ckpt}")
     _check(head_ckpt.exists(), f"head checkpoint missing: {head_ckpt}")
 
-    # live hash gates
     live_backbone_sha = sha256_file(backbone_ckpt)
     _check(live_backbone_sha == manifest["backbone_checkpoint_sha256"],
            "backbone checkpoint SHA-256 changed since the bundle was built.")
@@ -462,7 +409,6 @@ def validate_bundle_against_artifacts(manifest: dict[str, Any]) -> DeploymentBun
     _check(live_head_sha == manifest["head_checkpoint_sha256"],
            "head checkpoint SHA-256 changed since the bundle was built.")
 
-    # task ordering gate (intrinsic to the live checkpoint)
     state = _load_head_state_dict(head_ckpt)
     live_order = _task_order_from_state_dict(state)
     _check(live_order == list(manifest["model_task_ordering"]),
@@ -496,4 +442,19 @@ def load_validated_bundle(path: Path | None = None) -> DeploymentBundle:
     """Load the local manifest and re-validate it against live artifacts."""
     p = path or default_bundle_path()
     manifest = load_bundle_file(p)
+    return validate_bundle_against_artifacts(manifest)
+
+
+def build_validated_bundle() -> DeploymentBundle:
+    """Build a fresh, fully validated bundle directly from discovered artifacts.
+
+    For hosts that have the checkpoints (resolved via the discovery env vars /
+    default locations) but no committed ``.local`` manifest — e.g. a container
+    where the backbone was fetched from its public source and the head travels
+    with the deployment. Runs every fail-closed gate :func:`build_bundle`
+    performs (backbone SHA, strict head load, dr_grade output shape 5, live
+    backbone forward → dim 384, frozen), then re-validates the resulting manifest
+    against the live artifacts. Reads only; writes nothing.
+    """
+    manifest = build_bundle(validate_backbone_forward=True)
     return validate_bundle_against_artifacts(manifest)

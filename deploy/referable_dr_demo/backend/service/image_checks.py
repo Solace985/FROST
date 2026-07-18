@@ -1,15 +1,3 @@
-"""image_checks.py -- TECHNICAL input checks for FROST uploads.
-
-These are technical checks only (decodable image, format, dimensions, byte size,
-basic intensity/contrast sanity, optional extreme-blur warning). They are NOT a
-claim of clinical image-quality validation, out-of-distribution detection,
-retinal-field validation, camera suitability, fundus verification, or diagnostic
-adequacy.
-
-Rejections raise :class:`ImageCheckError` with a safe, non-sensitive ``category``.
-Soft issues are returned as ``warnings`` and do not block inference.
-"""
-
 from __future__ import annotations
 
 import io
@@ -21,13 +9,11 @@ from PIL import Image, UnidentifiedImageError
 
 logger = logging.getLogger(__name__)
 
-# Local limits (configurable constants; deliberately conservative).
-MAX_BYTES = 25 * 1024 * 1024        # 25 MB upload cap
-MAX_PIXELS = 50_000_000             # decompression-bomb guard (~50 MP)
-MIN_DIMENSION = 96                  # reject tiny images
+MAX_BYTES = 25 * 1024 * 1024
+MAX_PIXELS = 50_000_000
+MIN_DIMENSION = 96
 SUPPORTED_FORMATS = frozenset({"JPEG", "PNG"})
 
-# Soft-warning thresholds (technical only).
 LOW_CONTRAST_STD = 6.0
 EXTREME_DARK_MEAN = 8.0
 EXTREME_BRIGHT_MEAN = 247.0
@@ -74,7 +60,6 @@ def check_and_decode(raw: bytes) -> tuple[Image.Image, ImageCheckResult]:
             f"Upload exceeds the local size limit ({MAX_BYTES // (1024 * 1024)} MB).",
         )
 
-    # Open header lazily; do not fully decode until pixel count is bounded.
     try:
         probe = Image.open(io.BytesIO(raw))
         fmt = probe.format
@@ -108,10 +93,8 @@ def check_and_decode(raw: bytes) -> tuple[Image.Image, ImageCheckResult]:
             "alpha_only", "Alpha-only images are not supported."
         )
 
-    # Full decode now that pixel count is bounded.
     try:
         probe.load()
-        # Canonical pipeline converts to RGB (handles L / P / RGBA safely).
         rgb = probe.convert("RGB")
     except ImageCheckError:
         raise

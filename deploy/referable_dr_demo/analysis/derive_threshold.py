@@ -1,30 +1,3 @@
-"""derive_threshold.py -- validation-only operating-point derivation for FROST.
-
-Derives the fixed referable-DR operating-point threshold using ONLY the BRSET
-validation split, then applies the frozen threshold descriptively to the accepted
-held-out test predictions. Writes the ignored
-``.local/operating_point.local.json``.
-
-Procedure (per the deployment spec):
-  T.1  Reconstruct validation predictions for the accepted native-392 MT cell by
-       running the frozen head over the cached validation embeddings (no
-       retraining, no re-extraction, no pipeline script reruns).
-  T.2  referable score = softmax(dr_grade_logits)[2:5].sum();
-       referable label = 1 for grade>=2, else 0.
-  T.3  Select the LARGEST threshold T such that validation sensitivity(score>=T)
-       >= 0.95 (maximizes specificity subject to the sensitivity floor).
-  T.4  Freeze T.
-  T.5  Apply T to the accepted held-out test predictions for descriptive
-       operating-point reporting only.
-
-The threshold is NEVER derived from the reliability split, the test split,
-external data, or uploads. If validation labels/embeddings cannot be accessed,
-halts with BLOCKED_THRESHOLD_SELECTION_VALIDATION_ARTIFACT_MISSING.
-
-Run:
-    uv run python deploy/referable_dr_demo/analysis/derive_threshold.py
-"""
-
 from __future__ import annotations
 
 import csv
@@ -67,9 +40,6 @@ THRESHOLD_ALGORITHM = (
 ensure_src_importable()
 
 
-# --------------------------------------------------------------------------
-# Validation prediction reconstruction (cached embeddings + frozen head)
-# --------------------------------------------------------------------------
 def _load_splits(resolved_config_path: str) -> dict[str, list[str]]:
     import yaml  # noqa: PLC0415
 
@@ -123,7 +93,6 @@ def reconstruct_validation_predictions(
     if not val_sids:
         raise RuntimeError(f"{BLOCKED}: no validation split entries found")
 
-    # dataset_source from a real sample (generic, no dataset hardcoding)
     probe = adapter.load_sample(val_sids[0])
     dataset_source = probe.dataset_source
     index, _cache_dir = _cache_manifest_index(
@@ -146,7 +115,6 @@ def reconstruct_validation_predictions(
             f"{BLOCKED}: only {len(ordered_sids)} cached validation embeddings resolved"
         )
 
-    # Frozen head over cached val embeddings (reconstructs the val predictions).
     head = build_head(
         embedding_dim=bundle.embedding_dim,
         task_names=list(bundle.task_order),
@@ -162,7 +130,7 @@ def reconstruct_validation_predictions(
     emb = torch.from_numpy(np.stack(emb_list)).float()
     with torch.inference_mode():
         logits = head(emb)[bundle.manifest["dr_grade_task_key"]]
-    logits_np = logits.detach().cpu().numpy().astype(np.float64)  # (N,5)
+    logits_np = logits.detach().cpu().numpy().astype(np.float64)
 
     samples = [adapter.load_sample(sid) for sid in ordered_sids]
     batch = build_task_targets_and_masks(samples, ["dr_grade"])
@@ -171,9 +139,6 @@ def reconstruct_validation_predictions(
     return {"logits": logits_np, "labels": labels, "mask": mask}
 
 
-# --------------------------------------------------------------------------
-# Threshold selection + metrics
-# --------------------------------------------------------------------------
 def select_threshold(score: np.ndarray, label: np.ndarray, target: float) -> tuple[float, int, int]:
     pos = np.asarray(score)[np.asarray(label) == 1.0]
     P = int(pos.size)
@@ -208,13 +173,9 @@ def _referable_arrays(logits: np.ndarray, labels: np.ndarray, mask: np.ndarray) 
     return out["score"], out["label"]
 
 
-# --------------------------------------------------------------------------
-# Entrypoint
-# --------------------------------------------------------------------------
 def derive(write: bool = True) -> dict[str, Any]:
     bundle = bundle_mod.load_validated_bundle()
 
-    # --- validation (threshold selection) ---
     val = reconstruct_validation_predictions(bundle)
     val_score, val_label = _referable_arrays(val["logits"], val["labels"], val["mask"])
     threshold, needed, P_val = select_threshold(val_score, val_label, TARGET_SENSITIVITY)
@@ -225,7 +186,6 @@ def derive(write: bool = True) -> dict[str, Any]:
             f"{val_metrics['sensitivity']:.4f} < {TARGET_SENSITIVITY}"
         )
 
-    # --- held-out test (descriptive only) ---
     test_metrics: dict[str, Any]
     preds_path = verify_parity._discover_test_predictions(bundle)
     if preds_path is None:
@@ -251,7 +211,6 @@ def derive(write: bool = True) -> dict[str, Any]:
         "heldout_test_specificity": test_metrics["specificity"],
         "test_positive_count": test_metrics["positives"],
         "test_negative_count": test_metrics["negatives"],
-        # provenance binding (the app refuses the artifact if any of these drift)
         "backbone_checkpoint_sha256": bundle.backbone_sha256,
         "head_checkpoint_sha256": bundle.head_sha256,
         "preprocessing_hash": bundle.preprocessing_hash,

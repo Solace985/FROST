@@ -10,12 +10,9 @@ from retina_screen.evaluation import (
 from retina_screen.tasks import TASK_REGISTRY
 
 
-# ---------------------------------------------------------------------------
-# Binary sparse-subgroup safety
-# ---------------------------------------------------------------------------
 
 def test_n_less_than_30_returns_na():
-    y_true = np.array([0, 1, 0, 1, 0] * 5)   # n=25 < 30
+    y_true = np.array([0, 1, 0, 1, 0] * 5)
     y_score = np.random.default_rng(0).random(len(y_true))
     results = compute_binary_metrics(y_true, y_score, min_n=30)
     assert len(results) == 1
@@ -25,7 +22,7 @@ def test_n_less_than_30_returns_na():
 
 def test_positives_less_than_5_returns_na():
     y_true = np.zeros(40)
-    y_true[:3] = 1    # only 3 positives
+    y_true[:3] = 1
     y_score = np.random.default_rng(1).random(40)
     results = compute_binary_metrics(y_true, y_score, min_n=30, min_pos=5)
     assert results[0].status == MetricStatus.NA
@@ -33,14 +30,14 @@ def test_positives_less_than_5_returns_na():
 
 def test_negatives_less_than_5_returns_na():
     y_true = np.ones(40)
-    y_true[:3] = 0    # only 3 negatives
+    y_true[:3] = 0
     y_score = np.random.default_rng(2).random(40)
     results = compute_binary_metrics(y_true, y_score, min_n=30, min_neg=5)
     assert results[0].status == MetricStatus.NA
     assert results[0].reason == "insufficient_class_counts"
 
 def test_single_class_returns_na_no_auc_crash():
-    y_true = np.ones(50)   # all positives, single class
+    y_true = np.ones(50)
     y_score = np.random.default_rng(3).random(50)
     results = compute_binary_metrics(y_true, y_score)
     assert results[0].status == MetricStatus.NA
@@ -48,7 +45,7 @@ def test_single_class_returns_na_no_auc_crash():
 
 def test_valid_binary_computes_ok():
     rng = np.random.default_rng(4)
-    y_true = np.array([0] * 25 + [1] * 25)   # balanced, n=50
+    y_true = np.array([0] * 25 + [1] * 25)
     y_score = rng.random(50)
     results = compute_binary_metrics(y_true, y_score, min_n=30, min_pos=5, min_neg=5)
     assert len(results) == 1
@@ -74,9 +71,6 @@ def test_metric_result_has_n_pos_neg():
     assert isinstance(r.positives, int)
     assert isinstance(r.negatives, int)
 
-# ---------------------------------------------------------------------------
-# Regression metrics
-# ---------------------------------------------------------------------------
 
 def test_regression_small_n_returns_na():
     y_true = np.array([1.0, 2.0])
@@ -95,17 +89,12 @@ def test_regression_valid_computes_ok():
     assert results[0].value >= 0.0
 
 def test_regression_ignores_nan_targets():
-    # NaN targets must be excluded before calling compute_regression_metrics.
-    # evaluate_predictions does this; we test that valid rows compute correctly.
     y_true = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     y_pred = np.array([1.1, 2.1, 3.1, 4.1, 5.1])
     results = compute_regression_metrics(y_true, y_pred, min_n=5)
     assert results[0].status == MetricStatus.OK
     assert not math.isnan(results[0].value)
 
-# ---------------------------------------------------------------------------
-# Ordinal metrics
-# ---------------------------------------------------------------------------
 
 def test_ordinal_small_n_returns_na():
     y_true = np.array([0, 1, 2])
@@ -121,14 +110,10 @@ def test_ordinal_valid_computes_ok():
     assert results[0].status == MetricStatus.OK
     assert 0.0 <= results[0].value <= 1.0
 
-# ---------------------------------------------------------------------------
-# evaluate_predictions — overall metrics (not subgroups)
-# ---------------------------------------------------------------------------
 
 def test_evaluate_predictions_nonempty():
     rng = np.random.default_rng(7)
     n = 60
-    # dr_grade: always observed, ordinal
     dr_true = list(rng.integers(0, 5, n).astype(float))
     dr_mask = [1.0] * n
     dr_pred = rng.random((n, 5))
@@ -144,7 +129,7 @@ def test_evaluate_predictions_nonempty():
 
 def test_evaluate_predictions_sparse_subgroup_does_not_crash():
     rng = np.random.default_rng(8)
-    n = 3   # tiny — well below any threshold
+    n = 3
     results = evaluate_predictions(
         predictions={"glaucoma": rng.random(n)},
         targets={"glaucoma": list(rng.integers(0, 2, n).astype(float))},
@@ -156,9 +141,6 @@ def test_evaluate_predictions_sparse_subgroup_does_not_crash():
     assert results["glaucoma"][0].status == MetricStatus.NA
 
 
-# ---------------------------------------------------------------------------
-# evaluate_subgroups
-# ---------------------------------------------------------------------------
 
 
 def _evaluate_binary_subgroups(subgroup_labels: np.ndarray):

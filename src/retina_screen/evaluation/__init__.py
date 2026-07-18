@@ -1,28 +1,3 @@
-"""
-evaluation.py -- Evaluation metrics with sparse subgroup safety.
-
-Owns: binary/regression/ordinal metric computation, MetricResult dataclass,
-sparse subgroup NA handling, evaluate_predictions, evaluate_subgroups.
-
-Must not contain: model training, optimizer, concrete adapter imports, real
-dataset parsing, or paper figure rendering.
-
-Deferred for later stages: bootstrap confidence intervals, Brier score, ECE,
-PR-AUC, quadratic weighted kappa (QWK).
-Stage 8D-2A adds: macro_f1, balanced_accuracy, per_class_support for ordinal tasks.
-
-Sparse subgroup safety contract
---------------------------------
-Subgroups that are too small or single-class return MetricResult with
-status=NA and a reason string.  roc_auc_score is NEVER called on
-single-class data.
-
-Thresholds:
-- Binary AUROC:   min_n=30, min_pos=5, min_neg=5
-- Regression MAE: min_n=5
-- Ordinal accuracy: min_n=5
-"""
-
 from __future__ import annotations
 
 import logging
@@ -43,9 +18,6 @@ from retina_screen.tasks import TASK_REGISTRY, TaskType
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Status and result types
-# ---------------------------------------------------------------------------
 
 
 class MetricStatus(str, Enum):
@@ -89,9 +61,6 @@ class MetricResult:
     per_class_support: dict | None = None
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _na(name: str, reason: str, n: int, pos: int = -1, neg: int = -1,
@@ -104,9 +73,6 @@ def _ok(name: str, value: float, n: int, pos: int = -1, neg: int = -1,
     return MetricResult(name, value, MetricStatus.OK, "", n, pos, neg, per_class_support)
 
 
-# ---------------------------------------------------------------------------
-# Per-type metric computation
-# ---------------------------------------------------------------------------
 
 
 def compute_binary_metrics(
@@ -127,8 +93,6 @@ def compute_binary_metrics(
 
     if n < min_n:
         return [_na("auroc", "sparse_subgroup", n, pos, neg)]
-    # Single-class check before pos/neg counts: a single-class group is a
-    # distinct failure mode from merely having few positives or negatives.
     if len(np.unique(y_true)) < 2:
         return [_na("auroc", "single_class_subgroup", n, pos, neg)]
     if pos < min_pos or neg < min_neg:
@@ -185,9 +149,6 @@ def compute_ordinal_metrics(
     return results
 
 
-# ---------------------------------------------------------------------------
-# Batch evaluation
-# ---------------------------------------------------------------------------
 
 
 def evaluate_predictions(
@@ -223,7 +184,6 @@ def evaluate_predictions(
         target_arr = np.array(targets[tn], dtype=np.float64)
         pred_arr = predictions[tn]
 
-        # Select valid rows: mask==1 and not NaN
         valid = (mask_arr == 1.0) & ~np.isnan(target_arr)
         y_true = target_arr[valid]
         y_pred = pred_arr[valid] if pred_arr.ndim == 1 else pred_arr[valid]
@@ -234,7 +194,6 @@ def evaluate_predictions(
             continue
 
         if task.task_type == TaskType.BINARY:
-            # Sigmoid to convert logits to probabilities (pure numpy, no torch dep).
             y_score = 1.0 / (1.0 + np.exp(-y_pred.astype(np.float64)))
             results[tn] = compute_binary_metrics(
                 y_true, y_score, min_n=min_n_binary
@@ -255,9 +214,6 @@ def evaluate_predictions(
     return results
 
 
-# ---------------------------------------------------------------------------
-# Subgroup evaluation
-# ---------------------------------------------------------------------------
 
 
 def evaluate_subgroups(

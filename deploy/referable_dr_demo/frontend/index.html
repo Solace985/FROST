@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,137 +8,283 @@
   <title>FROST — Referable Diabetic Retinopathy Research Demonstrator</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
+
 <body>
   <header class="site-header">
-    <div class="brand">
-      <div class="brand-mark">FROST</div>
-      <div class="brand-text">
-        <p class="tagline">Frozen Representation for Ocular Screening and Triage</p>
-        <h1 class="subtitle">Referable Diabetic Retinopathy Research Demonstrator</h1>
-        <p class="descriptor">
-          Frozen RETFound-Green native-392 representation with a locked
-          multi-task prediction head.
-        </p>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-mark">FROST</div>
+        <div class="brand-text">
+          <p class="tagline">Frozen Representation for Ocular Screening and Triage</p>
+          <h1 class="subtitle">Referable Diabetic Retinopathy Research Demonstrator</h1>
+          <p class="descriptor">
+            Frozen RETFound-Green native-392 representation with a locked
+            multi-task prediction head.
+          </p>
+        </div>
       </div>
-      <div class="status-chip" id="health-chip" data-state="checking">
-        <span class="dot"></span><span id="health-text">Checking status…</span>
-      </div>
-    </div>
-
-    <!-- F.1 — the FIRST of exactly two designed not-a-medical-device statements -->
-    <div class="header-notice" role="note">
-      This local research demonstrator reproduces a study pipeline validated only
-      on BRSET&rsquo;s internal distribution. It is not a medical device, is not
-      validated for clinical decisions, and requires independent clinical
-      assessment.
+      <nav class="site-nav" aria-label="Section navigation">
+        <a class="nav-btn" href="#upload-panel">
+          <svg class="nav-ico" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1" y="8" width="3" height="6" /><rect x="6.5" y="4" width="3" height="10" /><rect x="12" y="1"
+              width="3" height="13" />
+          </svg>
+          Run your own analysis
+        </a>
+        <a class="nav-btn" href="#about-panel">
+          <svg class="nav-ico" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="8" cy="4.5" r="1.1" /><rect x="7.15" y="6.8" width="1.7" height="5.2" rx="0.6" />
+          </svg>
+          About
+        </a>
+      </nav>
     </div>
   </header>
 
   <main class="layout">
-    <!-- F.2 Upload panel -->
-    <section class="card upload-panel" aria-labelledby="upload-h">
-      <h2 id="upload-h">1 · Upload a fundus image</h2>
-      <div id="dropzone" class="dropzone" tabindex="0">
-        <input type="file" id="file-input" accept="image/jpeg,image/png" hidden />
-        <p class="dz-primary">Drag a JPEG or PNG here, or <button type="button" id="browse-btn" class="link-btn">browse</button>.</p>
-        <p class="dz-secondary">Processed in memory only. The image is never stored.</p>
+
+    <section class="context-band" aria-label="Diabetic retinopathy context">
+      <div class="stat-cards">
+        <div class="stat-card stat-blue">
+          <div class="stat-k">Adults living with diabetes (2021)</div>
+          <div class="stat-v">537M</div>
+          <div class="stat-sub">worldwide — IDF Diabetes Atlas, 10th ed.</div>
+        </div>
+        <div class="stat-card stat-red">
+          <div class="stat-k">Have some diabetic retinopathy</div>
+          <div class="stat-v">~1 in 3</div>
+          <div class="stat-sub">34.6% of people with diabetes — Yau et al., 2012</div>
+        </div>
+        <div class="stat-card stat-green">
+          <div class="stat-k">Severe visual loss is largely preventable</div>
+          <div class="stat-v">~95%</div>
+          <div class="stat-sub">with early detection &amp; timely treatment — WHO / ICO</div>
+        </div>
       </div>
 
-      <div id="preview-wrap" class="preview-wrap" hidden>
-        <img id="preview" alt="Local preview of the selected image (this session only)" />
-        <dl id="tech-checks" class="tech-checks"></dl>
-      </div>
-
-      <label class="confirm">
-        <input type="checkbox" id="confirm-box" />
-        I confirm this is a professionally acquired retinal fundus photograph.
-      </label>
-
-      <div class="run-row">
-        <button id="run-btn" class="primary-btn" disabled>Run prediction</button>
-        <span id="run-status" class="run-status" aria-live="polite"></span>
+      <div class="card graph-card">
+        <h2 class="graph-title">How common is diabetic retinopathy?</h2>
+        <p class="graph-sub">
+          Pooled global prevalence among people with diabetes — meta-analysis of 35
+          studies, Yau et&nbsp;al. (<em>Diabetes Care</em>, 2012; n&nbsp;≈&nbsp;22,900).
+        </p>
+        <div class="graph-body">
+          <svg class="dr-bar" viewBox="0 0 480 210" role="img"
+            aria-label="Global prevalence of diabetic retinopathy among people with diabetes: any DR 34.6 percent, vision-threatening DR 10.2 percent, proliferative DR 7.0 percent, diabetic macular edema 6.8 percent.">
+            <g stroke="#e6eaed" stroke-width="1">
+              <line x1="52" y1="185" x2="452" y2="185" />
+              <line x1="52" y1="145" x2="452" y2="145" />
+              <line x1="52" y1="105" x2="452" y2="105" />
+              <line x1="52" y1="65" x2="452" y2="65" />
+              <line x1="52" y1="25" x2="452" y2="25" />
+            </g>
+            <g font-family="-apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="10"
+              fill="#79858d" text-anchor="end">
+              <text x="44" y="189">0%</text>
+              <text x="44" y="149">10%</text>
+              <text x="44" y="109">20%</text>
+              <text x="44" y="69">30%</text>
+              <text x="44" y="29">40%</text>
+            </g>
+            <rect x="81" y="46.6" width="42" height="138.4" fill="#1f5066" />
+            <rect x="181" y="144.2" width="42" height="40.8" fill="#b23a3a" />
+            <rect x="281" y="157" width="42" height="28" fill="#cf7a33" />
+            <rect x="381" y="157.8" width="42" height="27.2" fill="#d9a441" />
+            <g font-family="-apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11"
+              font-weight="700" text-anchor="middle" fill="#1b2227">
+              <text x="102" y="40">34.6%</text>
+              <text x="202" y="137">10.2%</text>
+              <text x="302" y="150">7.0%</text>
+              <text x="402" y="150">6.8%</text>
+            </g>
+            <g font-family="-apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="10.5"
+              text-anchor="middle" fill="#4a565e">
+              <text x="102" y="201">Any DR</text>
+              <text x="202" y="201">VTDR</text>
+              <text x="302" y="201">PDR</text>
+              <text x="402" y="201">DME</text>
+            </g>
+          </svg>
+          <ul class="dr-legend">
+            <li style="background:rgba(31,80,102,0.14);border-left:3px solid #1f5066">
+              <span class="leg-abbr">Any DR</span><span class="leg-full">: any diabetic retinopathy</span>
+            </li>
+            <li style="background:rgba(178,58,58,0.14);border-left:3px solid #b23a3a">
+              <span class="leg-abbr">VTDR</span><span class="leg-full">: vision-threatening DR</span>
+            </li>
+            <li style="background:rgba(207,122,51,0.16);border-left:3px solid #cf7a33">
+              <span class="leg-abbr">PDR</span><span class="leg-full">: proliferative DR</span>
+            </li>
+            <li style="background:rgba(217,164,65,0.20);border-left:3px solid #d9a441">
+              <span class="leg-abbr">DME</span><span class="leg-full">: diabetic macular edema</span>
+            </li>
+          </ul>
+        </div>
+        <p class="graph-src">
+          Referable DR (moderate non-proliferative DR or worse) targets exactly the
+          vision-threatening end of this spectrum — the cases where timely referral
+          matters most.
+        </p>
       </div>
     </section>
 
-    <!-- F.3 Results panel -->
-    <section class="card results-panel" id="results-panel" aria-labelledby="results-h" hidden>
-      <h2 id="results-h">2 · Research triage result</h2>
-      <div class="decision" id="decision-badge">
-        <span class="decision-label" id="decision-label">—</span>
-      </div>
+    <div class="two-col">
 
-      <div class="metrics-grid">
-        <div class="metric">
-          <div class="metric-k">Referable-DR research score</div>
-          <div class="metric-v" id="score-val">—</div>
+      <section class="card upload-panel" id="upload-panel" aria-labelledby="upload-h">
+        <h2 id="upload-h"><span class="step-badge">1</span>Upload a fundus image</h2>
+        <div id="dropzone" class="dropzone" tabindex="0">
+          <input type="file" id="file-input" accept="image/jpeg,image/png" hidden />
+          <p class="dz-primary">Drag a JPEG or PNG here, or <button type="button" id="browse-btn"
+              class="link-btn">browse</button>.</p>
+          <p class="dz-secondary">Processed in memory only. The image is never stored.</p>
         </div>
-        <div class="metric">
-          <div class="metric-k">Validation-selected threshold</div>
-          <div class="metric-v" id="threshold-val">—</div>
-        </div>
-        <div class="metric">
-          <div class="metric-k">Status</div>
-          <div class="metric-v" id="threshold-status-val">—</div>
-        </div>
-      </div>
 
-      <p class="op-note" id="op-note"></p>
-      <p class="op-context" id="op-context"></p>
-      <p class="alert-line" id="alert-line"></p>
-      <p class="not-calibrated">
-        This is an operating-point triage result, not a calibrated probability.
-      </p>
-    </section>
+        <div id="preview-wrap" class="preview-wrap" hidden>
+          <img id="preview" alt="Local preview of the selected image (this session only)" />
+          <dl id="tech-checks" class="tech-checks"></dl>
+        </div>
 
-    <!-- F.4 Pipeline visualization -->
+        <label class="confirm">
+          <input type="checkbox" id="confirm-box" />
+          I confirm this is a professionally acquired retinal fundus photograph.
+        </label>
+
+        <div class="run-row">
+          <button id="run-btn" class="primary-btn" disabled>Run prediction</button>
+          <span id="run-status" class="run-status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="card results-panel" id="results-panel" aria-labelledby="results-h">
+        <h2 id="results-h"><span class="step-badge">2</span>Research triage result</h2>
+
+        <p class="await-msg" id="await-msg">
+          Upload a fundus image and run a prediction to see the triage result here.
+        </p>
+
+        <div id="result-content" hidden>
+          <div class="decision" id="decision-badge">
+            <span class="decision-icon" id="decision-icon">•</span>
+            <span class="decision-label" id="decision-label">—</span>
+          </div>
+
+          <div class="gauge" id="gauge">
+            <div class="gauge-top">
+              <span class="gauge-thr-label" id="gauge-thr-label">validation threshold</span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gauge-fill"></div>
+              <div class="gauge-threshold" id="gauge-threshold" title="validation threshold"></div>
+            </div>
+            <div class="gauge-legend">
+              <span>lower referable score</span>
+              <span>higher referable score</span>
+            </div>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric">
+              <div class="metric-k">Referable-DR research score</div>
+              <div class="metric-v" id="score-val">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-k">Validation-selected threshold</div>
+              <div class="metric-v" id="threshold-val">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-k">Status</div>
+              <div class="metric-v" id="threshold-status-val">—</div>
+            </div>
+          </div>
+
+          <p class="op-note" id="op-note"></p>
+          <p class="op-context" id="op-context"></p>
+          <div class="alert-line" id="alert-line"></div>
+          <p class="not-calibrated">
+            This is an operating-point triage result, not a calibrated probability.
+          </p>
+        </div>
+      </section>
+    </div>
+
     <section class="card pipeline-panel" id="pipeline-panel" aria-labelledby="pipeline-h" hidden>
-      <h2 id="pipeline-h">3 · Pipeline trace (this request)</h2>
+      <h2 id="pipeline-h"><span class="step-badge">3</span>FROST analysis report</h2>
+      <p class="panel-intro">
+        A step-by-step trace of everything this image passed through — from upload,
+        through the frozen RETFound-Green representation, to the final triage
+        decision. Each card below is one stage, in order.
+      </p>
       <img class="pipeline-schematic" src="/static/assets/pipeline.svg"
-           alt="Schematic: image to native-392 preprocessing to frozen backbone to embedding to multi-task head to referable mass to threshold to decision." />
-      <ol id="pipeline-flow" class="pipeline-flow"></ol>
+        alt="Schematic: image to native-392 preprocessing to frozen backbone to embedding to multi-task head to referable mass to threshold to decision." />
+
+      <p class="flow-label">From image to frozen representation</p>
+      <ol id="pipeline-row-1" class="pipeline-row"></ol>
+      <p class="flow-label">From representation to triage decision</p>
+      <ol id="pipeline-row-2" class="pipeline-row"></ol>
     </section>
 
-    <!-- F.5 Efficiency statement -->
     <p class="efficiency">
       This demonstrator runs the frozen ~22M-parameter RETFound-Green backbone
       selected from the study&rsquo;s internal referable-DR comparison.
     </p>
 
-    <!-- F.6 About / study basis -->
-    <details class="card about">
-      <summary>About &amp; study basis</summary>
-      <div class="about-body">
-        <p>
-          <strong>FROST</strong> (Frozen Representation for Ocular Screening and
-          Triage) reproduces, for local inspection, the referable diabetic
-          retinopathy pipeline from the underlying study. The study itself is
-          defined in the manuscript; FROST is a demonstrator built on top of it.
-        </p>
-        <ul>
-          <li><strong>Dataset:</strong> BRSET, a Brazilian colour-fundus dataset; results are from BRSET&rsquo;s internal distribution.</li>
-          <li><strong>Cohort &amp; split:</strong> a patient-level train / validation / reliability / test split (no patient appears in two splits).</li>
-          <li><strong>Referable DR:</strong> defined as DR grade &ge; 2 (moderate non-proliferative DR or worse).</li>
-          <li><strong>Model:</strong> a frozen RETFound-Green backbone at its native 392&times;392 protocol (average pooling, 384-dimensional embedding) feeding a lightweight multi-task head. The backbone receives no gradient updates.</li>
-          <li><strong>Why this model:</strong> it was selected for the demonstrator for its strong internal referable-DR performance with a compact frozen backbone &mdash; not a claim of universal superiority over larger models.</li>
-          <li><strong>Uncertainty:</strong> the study reported patient-clustered bootstrap confidence intervals as study-level evidence; these are not per-image confidence.</li>
-          <li><strong>Operating point:</strong> the decision threshold was selected on the validation split only (largest threshold preserving validation sensitivity &ge; 0.95) and then frozen.</li>
-          <li><strong>No online learning:</strong> uploads never update the model, threshold, or any parameter.</li>
-        </ul>
-        <!-- F.6 — the SECOND and final full limitation statement -->
-        <p class="limitation">
-          External population, device, workflow, calibration, and prospective
-          clinical validation remain future work. Internal BRSET performance does
-          not guarantee performance on images from other sources.
-        </p>
-      </div>
-    </details>
   </main>
 
-  <footer class="site-footer">
-    FROST · local referable-DR research demonstrator · runs entirely on
-    <code>127.0.0.1</code> · no external network access
+  <footer class="site-foot">
+    <div class="foot-inner foot-grid">
+      <div class="foot-text">
+
+        <p class="foot-disclaimer">
+          This local research demonstrator reproduces a study pipeline validated only
+          on BRSET&rsquo;s internal distribution. It is not a medical device, is not
+          validated for clinical decisions, and requires independent clinical
+          assessment.
+        </p>
+
+        <p class="foot-disclaimer">
+          External population, device, workflow, calibration, and prospective clinical
+          validation remain future work. Internal BRSET performance does not guarantee
+          performance on images from other sources.
+        </p>
+        <p class="foot-tag">FROST — referable-DR research demonstrator</p>
+      </div>
+
+      <details class="foot-about" id="about-panel">
+        <summary>About &amp; study basis</summary>
+        <div class="about-body">
+          <p>
+            <strong>FROST</strong> (Frozen Representation for Ocular Screening and
+            Triage) reproduces, for local inspection, the referable diabetic
+            retinopathy pipeline from the underlying study. The study itself is
+            defined in the manuscript; FROST is a demonstrator built on top of it.
+          </p>
+          <ul>
+            <li><strong>Dataset:</strong> BRSET, a Brazilian colour-fundus dataset; results are from BRSET&rsquo;s
+              internal distribution. Details accessible at:
+              <a href="https://physionet.org/content/brazilian-ophthalmological/1.0.1/" target="_blank"
+                rel="noopener noreferrer">A Brazilian Multilabel Ophthalmological Dataset (BRSET) v1.0.1</a>.
+            </li>
+            <li><strong>Cohort &amp; split:</strong> a patient-level train / validation / reliability / test split (no
+              patient appears in two splits).</li>
+            <li><strong>Referable DR:</strong> defined as DR grade &ge; 2 (moderate non-proliferative DR or worse).</li>
+            <li><strong>Model:</strong> a frozen RETFound-Green backbone at its native 392&times;392 protocol (average
+              pooling, 384-dimensional embedding) feeding a lightweight multi-task head. The backbone receives no
+              gradient updates.</li>
+            <li><strong>Why this model:</strong> it was selected for the demonstrator for its strong internal
+              referable-DR performance with a compact frozen backbone not a claim of universal superiority over larger
+              models.</li>
+            <li><strong>Uncertainty:</strong> the study reported patient-clustered bootstrap confidence intervals as
+              study-level evidence; these are not per-image confidence.</li>
+            <li><strong>Operating point:</strong> the decision threshold was selected on the validation split only
+              (largest threshold preserving validation sensitivity &ge; 0.95) and then frozen.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
   </footer>
 
   <script src="/static/app.js"></script>
 </body>
+
 </html>

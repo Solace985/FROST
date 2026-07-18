@@ -1,11 +1,3 @@
-"""schemas.py -- FastAPI response models for FROST.
-
-Pydantic models for /health and /predict. Imported only when the web app runs
-(FastAPI/pydantic are app-local dependencies). The schemas deliberately exclude
-raw embeddings, the five-class grade label, and any systemic / other-ocular task
-output: the demonstrator surfaces only the referable-DR triage result.
-"""
-
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

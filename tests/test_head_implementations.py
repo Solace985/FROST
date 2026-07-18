@@ -1,21 +1,3 @@
-"""
-tests/test_head_implementations.py -- Stage 8D-3A head implementation tests.
-
-Covers:
-  - build_head factory: MultiTaskHead, LinearProbeHead, multitask_default alias,
-    unknown head_type error, missing head_type default, unsupported kwargs error.
-  - LinearProbeHead: output keys, output shapes (binary/ordinal/regression),
-    no hidden layers/trunk/dropout/activation, no metadata consumption,
-    fewer parameters than MultiTaskHead.
-  - Backward compatibility: existing MultiTaskHead construction unchanged.
-  - Training/loss path: LinearProbeHead outputs work with compute_masked_task_loss
-    and train_one_step on synthetic tensors.
-  - Script dispatch: head_type from config drives head selection.
-  - No dataset-specific vocabulary in model.py.
-
-All tests use synthetic tensors only. No BRSET data, no cache, no real training.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -40,22 +22,16 @@ from retina_screen.training import (
     train_one_step,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 EMB_DIM = 16
 BINARY_TASK = "diabetes"
-ORDINAL_TASK = "dr_grade"       # 5 classes
+ORDINAL_TASK = "dr_grade"
 REGRESSION_TASK = "retinal_age"
 TASKS_BINARY_ORDINAL = [BINARY_TASK, ORDINAL_TASK]
 TASKS_ALL = [BINARY_TASK, ORDINAL_TASK, REGRESSION_TASK]
 BATCH = 8
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_batch(task_names, batch=BATCH, emb_dim=EMB_DIM):
@@ -76,9 +52,6 @@ def _make_batch(task_names, batch=BATCH, emb_dim=EMB_DIM):
     return emb, targets, masks
 
 
-# ---------------------------------------------------------------------------
-# Factory: head type selection
-# ---------------------------------------------------------------------------
 
 
 def test_multitask_head_via_factory():
@@ -110,7 +83,6 @@ def test_unknown_head_type_raises_valueerror():
         build_head(EMB_DIM, TASKS_BINARY_ORDINAL, head_type="transformer_probe_v99")
     msg = str(exc_info.value)
     assert "transformer_probe_v99" in msg, "Error must name the invalid head_type"
-    # At least one valid type should be mentioned
     assert any(ht in msg for ht in _VALID_HEAD_TYPES), \
         "Error must list valid head_type values"
 
@@ -123,9 +95,6 @@ def test_unknown_head_type_error_lists_valid_values():
         assert ht in msg, f"Error message must list valid type {ht!r}"
 
 
-# ---------------------------------------------------------------------------
-# Factory: unsupported kwargs for LinearProbeHead
-# ---------------------------------------------------------------------------
 
 
 def test_linear_probe_rejects_unsupported_kwargs():
@@ -138,15 +107,11 @@ def test_linear_probe_rejects_unsupported_kwargs():
 
 
 def test_multitask_accepts_kwargs():
-    # Sanity: MultiTaskHead still accepts known kwargs through factory.
     model = build_head(EMB_DIM, TASKS_BINARY_ORDINAL, head_type="multitask",
                        hidden_dim=64, dropout=0.1)
     assert isinstance(model, MultiTaskHead)
 
 
-# ---------------------------------------------------------------------------
-# LinearProbeHead: output contract
-# ---------------------------------------------------------------------------
 
 
 def test_linear_probe_output_keys_match_tasks():
@@ -196,9 +161,6 @@ def test_multitask_and_linear_probe_compatible_output():
             f"Shape mismatch for task {tn!r}: MT={mt_out[tn].shape}, LP={lp_out[tn].shape}"
 
 
-# ---------------------------------------------------------------------------
-# LinearProbeHead: architecture constraints
-# ---------------------------------------------------------------------------
 
 
 def test_linear_probe_fewer_params_than_multitask():
@@ -246,7 +208,6 @@ def test_linear_probe_ignores_metadata():
     metadata = torch.randn(BATCH, 4)
     out_without = model(emb, metadata=None)
     out_with = model(emb, metadata=metadata)
-    # Both calls must succeed and produce identical outputs (metadata is ignored)
     for tn in TASKS_BINARY_ORDINAL:
         assert torch.allclose(out_without[tn], out_with[tn]), \
             f"LinearProbeHead must ignore metadata; got different output for task {tn!r}"
@@ -254,7 +215,6 @@ def test_linear_probe_ignores_metadata():
 
 def test_linear_probe_no_metadata_attribute():
     model = LinearProbeHead(EMB_DIM, TASKS_BINARY_ORDINAL)
-    # LinearProbeHead should not have a metadata_dim field (it has no metadata branch)
     assert not hasattr(model, "_metadata_dim"), \
         "LinearProbeHead must not have a _metadata_dim attribute"
 
@@ -265,9 +225,6 @@ def test_linear_probe_task_registry_validation():
     assert "nonexistent_task_xyz" in str(exc_info.value)
 
 
-# ---------------------------------------------------------------------------
-# Training / loss path compatibility
-# ---------------------------------------------------------------------------
 
 
 def test_loss_path_works_with_linear_probe():
@@ -299,7 +256,6 @@ def test_train_one_step_with_linear_probe():
 def test_kendall_weighter_is_separate_from_linear_probe():
     model = LinearProbeHead(EMB_DIM, TASKS_BINARY_ORDINAL)
     weighter = KendallUncertaintyWeighting(TASKS_BINARY_ORDINAL)
-    # log_sigma parameters live in the weighter, not the model
     model_param_names = {n for n, _ in model.named_parameters()}
     assert not any("log_sigma" in name for name in model_param_names), \
         "LinearProbeHead must not own log_sigma parameters (owned by KendallUncertaintyWeighting)"
@@ -308,9 +264,6 @@ def test_kendall_weighter_is_separate_from_linear_probe():
         "KendallUncertaintyWeighting must own log_sigma parameters"
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility: existing MultiTaskHead behavior unchanged
-# ---------------------------------------------------------------------------
 
 
 def test_multitask_head_backward_compat_direct_construction():
@@ -331,9 +284,6 @@ def test_linear_probe_task_names_property():
     assert model.task_names == list(TASKS_BINARY_ORDINAL)
 
 
-# ---------------------------------------------------------------------------
-# No dataset-specific vocabulary in model.py
-# ---------------------------------------------------------------------------
 
 
 def test_no_dataset_names_in_model_py():
@@ -347,9 +297,6 @@ def test_no_dataset_names_in_model_py():
         )
 
 
-# ---------------------------------------------------------------------------
-# Script dispatch: head_type from config
-# ---------------------------------------------------------------------------
 
 
 def test_train_script_uses_head_type_from_config(tmp_path, monkeypatch):
@@ -357,7 +304,6 @@ def test_train_script_uses_head_type_from_config(tmp_path, monkeypatch):
     import importlib
     import types
 
-    # Capture the head_type that build_head would receive.
     captured: dict = {}
     original_build_head = build_head
 
@@ -368,7 +314,6 @@ def test_train_script_uses_head_type_from_config(tmp_path, monkeypatch):
     import retina_screen.model as model_module
     monkeypatch.setattr(model_module, "build_head", mock_build_head)
 
-    # Simulate the config read that 04_train.py does.
     cfg = {"head_type": "linear_probe", "embedding_dim": EMB_DIM}
     head_type = str(cfg.get("head_type", "multitask"))
     model_module.build_head(embedding_dim=EMB_DIM, task_names=[BINARY_TASK], head_type=head_type)
@@ -392,7 +337,6 @@ def test_eval_script_head_type_default_when_resolved_missing(tmp_path):
     """When resolved_config.yaml is absent, experiment config or default is used."""
     missing = tmp_path / "resolved_config.yaml"
     assert not missing.exists()
-    # Simulates the fallback: use experiment cfg (or default)
     experiment_cfg = {}
     head_type = str(experiment_cfg.get("head_type", "multitask"))
     assert head_type == "multitask", \

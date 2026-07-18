@@ -1,0 +1,33 @@
+# FROST — Hugging Face Docker Space runtime deps (CPU).
+#
+# torch and torchvision are installed SEPARATELY in the Dockerfile from the
+# PyTorch CPU wheel index (much smaller than the default CUDA build):
+#   pip install --index-url https://download.pytorch.org/whl/cpu \
+#       torch==2.12.0 torchvision==0.27.0
+#
+# Every version below is pinned to the EXACT study/model environment so the
+# hosted model loads byte-for-byte identically to the local/study pipeline.
+# (Verified installed versions on the study machine: python 3.12.13.)
+
+# --- parity-critical model stack ---
+timm==1.0.27
+numpy==2.4.6
+pillow==12.2.0
+PyYAML==6.0.3
+
+# --- pulled in transitively by the canonical retina_screen modules the
+#     demonstrator imports (schema -> pydantic; evaluation.referable_dr ->
+#     evaluation.bootstrap_ci -> scikit-learn/scipy; plus pandas/tqdm). ---
+pydantic==2.13.4
+scikit-learn==1.8.0
+scipy==1.17.1
+pandas==2.3.3
+tqdm==4.67.3
+
+# --- web serving (same versions as requirements-local.txt) ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- optional: only used if FROST_WEIGHTS_REPO is set (HF-repo weight route) ---
+huggingface_hub==1.16.1

@@ -1,11 +1,3 @@
-"""
-tests/test_import_boundaries.py -- AST-based static import-boundary checks.
-
-Verifies that the import dependency graph matches the architecture contract
-(docs/ai_context/01_architecture_contract.md). These tests pass trivially
-when downstream files are empty stubs (no imports = no violations).
-"""
-
 from __future__ import annotations
 
 import ast
@@ -18,9 +10,6 @@ SRC_ROOT = REPO_ROOT / "src" / "retina_screen"
 ADAPTERS_DIR = SRC_ROOT / "adapters"
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
 
 def get_imported_modules(file_path: Path) -> list[str]:
@@ -52,9 +41,7 @@ def get_imported_modules(file_path: Path) -> list[str]:
                 modules.append(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.module:
-                # Resolve relative imports relative to retina_screen package
                 if node.level and node.level > 0:
-                    # Relative import: treat as retina_screen.<module>
                     modules.append(f"retina_screen.{node.module or ''}")
                 else:
                     modules.append(node.module)
@@ -65,9 +52,6 @@ def _starts_with_any(module: str, prefixes: tuple[str, ...]) -> bool:
     return any(module == p or module.startswith(p + ".") for p in prefixes)
 
 
-# ---------------------------------------------------------------------------
-# Foundation modules
-# ---------------------------------------------------------------------------
 
 
 def test_schema_imports_no_project_modules():
@@ -119,9 +103,6 @@ def test_core_no_forbidden_imports():
     )
 
 
-# ---------------------------------------------------------------------------
-# Adapter boundary: adapters must not import model/training/evaluation/etc.
-# ---------------------------------------------------------------------------
 
 _ADAPTER_FILES = [
     f for f in ADAPTERS_DIR.glob("*.py") if f.name != "__init__.py"
@@ -147,9 +128,6 @@ def test_adapter_no_model_training_evaluation(adapter_file: Path):
     )
 
 
-# ---------------------------------------------------------------------------
-# Model must not import concrete adapters
-# ---------------------------------------------------------------------------
 
 
 def test_model_no_concrete_adapter_imports():
@@ -162,9 +140,6 @@ def test_model_no_concrete_adapter_imports():
     )
 
 
-# ---------------------------------------------------------------------------
-# Evaluation must not import concrete adapters
-# ---------------------------------------------------------------------------
 
 
 def test_evaluation_no_concrete_adapter_imports():
@@ -177,9 +152,6 @@ def test_evaluation_no_concrete_adapter_imports():
     )
 
 
-# ---------------------------------------------------------------------------
-# Dashboard must not import training (no live retraining)
-# ---------------------------------------------------------------------------
 
 
 def test_dashboard_no_training_import():
@@ -193,9 +165,6 @@ def test_dashboard_no_training_import():
     )
 
 
-# ---------------------------------------------------------------------------
-# Sanity: the helper itself works correctly
-# ---------------------------------------------------------------------------
 
 
 def test_get_imported_modules_handles_empty_file(tmp_path):

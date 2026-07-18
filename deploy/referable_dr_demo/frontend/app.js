@@ -1,4 +1,3 @@
-/* FROST frontend logic — plain JavaScript, no framework, no build step. */
 (function () {
   "use strict";
 
@@ -18,10 +17,10 @@
   var selectedFile = null;
   var previewUrl = null;
 
-  /* ---------- health ---------- */
   function refreshHealth() {
     var chip = document.getElementById("health-chip");
     var text = document.getElementById("health-text");
+    if (!chip || !text) { return; }
     fetch("/health")
       .then(function (r) { return r.json(); })
       .then(function (h) {
@@ -39,7 +38,6 @@
       });
   }
 
-  /* ---------- selection ---------- */
   function setFile(file) {
     if (!file) { return; }
     if (file.type !== "image/jpeg" && file.type !== "image/png") {
@@ -83,7 +81,6 @@
   });
   dropzone.addEventListener("click", function () { fileInput.click(); });
 
-  /* ---------- run ---------- */
   runBtn.addEventListener("click", function () {
     if (!selectedFile) { return; }
     runBtn.disabled = true;
@@ -112,7 +109,6 @@
       .finally(function () { updateRunEnabled(); });
   });
 
-  /* ---------- rendering ---------- */
   function pct(x) { return (x * 100).toFixed(1) + "%"; }
 
   function renderTechChecksError(category) {
@@ -147,12 +143,12 @@
   function renderResult(b) {
     renderTechChecks(b.technical_checks, b.warnings);
 
-    // Decision badge
     var badge = document.getElementById("decision-badge");
     badge.setAttribute("data-decision", b.decision);
     document.getElementById("decision-label").textContent = b.decision;
+    document.getElementById("decision-icon").textContent =
+      b.decision === "REFERABLE" ? "▲" : "✓";
 
-    // Metrics
     document.getElementById("score-val").textContent = b.referable_dr_score.toFixed(4);
     document.getElementById("threshold-val").textContent = b.threshold.toFixed(4);
     var above = b.decision === "REFERABLE";
@@ -172,27 +168,43 @@
     var alertLine = document.getElementById("alert-line");
     if (above) {
       alertLine.setAttribute("data-kind", "above");
-      alertLine.textContent =
-        "Research alert: the referable-DR score is above the validation-selected " +
-        "screening threshold. Prompt ophthalmic clinical review is indicated.";
+      alertLine.innerHTML =
+        '<p class="alert-lead">The referable-DR score is above the ' +
+        "validation-selected screening threshold.</p>" +
+        '<div class="clinical-suggestion">' +
+        '<div class="cs-head">Clinical suggestion</div>' +
+        '<div class="cs-body">Prompt ophthalmic clinical review is suggested.</div>' +
+        "</div>";
     } else {
       alertLine.setAttribute("data-kind", "below");
-      alertLine.textContent =
-        "Below the validation-selected research alert threshold. " +
-        "This is not a rule-out result and does not replace clinician assessment.";
+      alertLine.innerHTML =
+        '<p class="alert-lead">Below the validation-selected research alert ' +
+        "threshold. This is not a rule-out result and does not replace " +
+        "clinician assessment.</p>";
     }
+
+    var sqrtPos = function (x) {
+      return (Math.sqrt(Math.max(0, Math.min(1, x))) * 100).toFixed(1);
+    };
+    var gauge = document.getElementById("gauge");
+    gauge.setAttribute("data-decision", b.decision);
+    var thrPos = sqrtPos(b.threshold);
+    document.getElementById("gauge-fill").style.width = sqrtPos(b.referable_dr_score) + "%";
+    document.getElementById("gauge-threshold").style.left = thrPos + "%";
+    document.getElementById("gauge-thr-label").style.left = thrPos + "%";
+
+    document.getElementById("await-msg").hidden = true;
+    document.getElementById("result-content").hidden = false;
     resultsPanel.hidden = false;
 
     renderPipeline(b);
     pipelinePanel.hidden = false;
-    pipelinePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   function stage(name, value, timeMs, frozen) {
     var li = document.createElement("li");
     if (frozen) { li.className = "frozen-stage"; }
     var html = '<div class="stage-name">' + name + "</div>";
-    if (frozen) { html += '<div class="frozen-tag">frozen · no gradient</div>'; }
     html += '<div class="stage-val">' + value + "</div>";
     if (timeMs !== null && timeMs !== undefined) {
       html += '<div class="stage-time">' + timeMs.toFixed(1) + " ms</div>";
@@ -201,24 +213,78 @@
     return li;
   }
 
+  var GRADE_COLORS = ["#2e7d5b", "#9bb04a", "#d9a441", "#cf7a33", "#b23a3a"];
+
+  function drGradePie(rawProbs) {
+    var cx = 60, cy = 60, r = 54;
+    var total = rawProbs.reduce(function (a, b) { return a + b; }, 0) || 1;
+    var start = -Math.PI / 2;
+    var slices = "";
+    rawProbs.forEach(function (p, i) {
+      var frac = p / total;
+      if (frac <= 0) { return; }
+      if (frac >= 0.999) {
+        slices += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r +
+          '" fill="' + GRADE_COLORS[i] + '"/>';
+        return;
+      }
+      var end = start + frac * 2 * Math.PI;
+      var x0 = (cx + r * Math.cos(start)).toFixed(2);
+      var y0 = (cy + r * Math.sin(start)).toFixed(2);
+      var x1 = (cx + r * Math.cos(end)).toFixed(2);
+      var y1 = (cy + r * Math.sin(end)).toFixed(2);
+      var large = (end - start) > Math.PI ? 1 : 0;
+      slices += '<path d="M' + cx + ' ' + cy + ' L' + x0 + ' ' + y0 +
+        ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x1 + ' ' + y1 +
+        ' Z" fill="' + GRADE_COLORS[i] + '" stroke="#ffffff" stroke-width="1"/>';
+      start = end;
+    });
+    var svg = '<svg class="pie-svg" viewBox="0 0 120 120" role="img" ' +
+      'aria-label="DR grade class-probability distribution, grade 0 (low ' +
+      'severity) through grade 4 (high severity)">' + slices + '</svg>';
+    var legend = '<ul class="pie-legend">';
+    for (var i = 0; i < GRADE_COLORS.length; i++) {
+      legend += '<li><span class="pie-key" style="background:' +
+        GRADE_COLORS[i] + '"></span>grade ' + i + '</li>';
+    }
+    legend += '</ul>';
+    return '<div class="pie-wrap">' + svg + legend + '</div>';
+  }
+
   function renderPipeline(b) {
-    var flow = document.getElementById("pipeline-flow");
-    flow.innerHTML = "";
+    var row1 = document.getElementById("pipeline-row-1");
+    var row2 = document.getElementById("pipeline-row-2");
+    row1.innerHTML = "";
+    row2.innerHTML = "";
     var t = b.timings_ms;
     var tc = b.technical_checks;
     var trace = b.pipeline_trace;
-    var probs = trace.dr_grade_class_probs.map(function (p) { return p.toFixed(3); });
 
-    flow.appendChild(stage("Uploaded image", tc.width + "×" + tc.height + " px", t.decode, false));
-    flow.appendChild(stage("Native-392 preprocessing", "tensor [1,3,392,392]", t.preprocessing, false));
-    flow.appendChild(stage("RETFound-Green backbone", trace.backbone_params + " params", t.backbone, true));
-    flow.appendChild(stage("Embedding", "[" + trace.embedding_dim + "]", null, false));
-    flow.appendChild(stage("MultiTaskHead", "dr_grade logits [5]", t.head, false));
-    flow.appendChild(stage("dr_grade class probs", "p0–p4 = " + probs.join(", "), t.postprocessing, false));
-    flow.appendChild(stage("Referable mass", "p2+p3+p4 = " + b.referable_dr_score.toFixed(4), null, false));
-    flow.appendChild(stage("Validation threshold", b.threshold.toFixed(4), null, false));
-    flow.appendChild(stage("Decision", b.decision, null, false));
+    row1.appendChild(stage("Uploaded image", tc.width + "×" + tc.height + " px", t.decode, false));
+    row1.appendChild(stage("Native-392 Image Preprocessing", "tensor [1,3,392,392]", t.preprocessing, false));
+    row1.appendChild(stage("RETFound-Green backbone", trace.backbone_params + " params", t.backbone, true));
+    row1.appendChild(stage("Embedding Dimension", "[" + trace.embedding_dim + "]", null, false));
+    row1.appendChild(stage("MultiTaskHead", "dr_grade logits [5]", t.head, false));
+
+    row2.appendChild(stage("Diabetic Retinopathy Grade class probabilities",
+      drGradePie(trace.dr_grade_class_probs), null, false));
+    row2.appendChild(stage("Referable mass",
+      "grade 2 + grade 3 + grade 4 = " + b.referable_dr_score.toFixed(4), null, false));
+    row2.appendChild(stage("Validation threshold", b.threshold.toFixed(4), null, false));
+    row2.appendChild(stage("Decision", b.decision, null, false));
   }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".nav-btn"), function (a) {
+    a.addEventListener("click", function (e) {
+      var href = a.getAttribute("href") || "";
+      if (href.charAt(0) !== "#") { return; }
+      var target = document.querySelector(href);
+      if (!target) { return; }
+      e.preventDefault();
+      if (target.tagName === "DETAILS") { target.open = true; }
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 
   refreshHealth();
 })();

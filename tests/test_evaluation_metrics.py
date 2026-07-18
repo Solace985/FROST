@@ -1,16 +1,3 @@
-"""
-tests/test_evaluation_metrics.py -- Tests for Stage 8D-2A evaluation metric additions.
-
-Covers:
-  - compute_ordinal_metrics: accuracy + macro_f1 + balanced_accuracy + per_class_support
-  - Majority-class imbalance exposure (high accuracy, low macro_f1/balanced_accuracy)
-  - Single-class ordinal input safety (NA for macro_f1/balanced_accuracy, no crash)
-  - Per-class support counts correctness
-  - Sparse subgroup behaviour unchanged (n < min_n → single NA)
-  - Existing binary AUROC unaffected
-  - MetricResult.per_class_support defaults to None
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -24,9 +11,6 @@ from retina_screen.evaluation import (
 )
 
 
-# ---------------------------------------------------------------------------
-# MetricResult field
-# ---------------------------------------------------------------------------
 
 
 def test_metric_result_per_class_support_defaults_to_none() -> None:
@@ -39,9 +23,6 @@ def test_metric_result_per_class_support_can_be_set() -> None:
     assert r.per_class_support == {0: 90, 1: 10}
 
 
-# ---------------------------------------------------------------------------
-# compute_ordinal_metrics — normal multi-class input
-# ---------------------------------------------------------------------------
 
 
 def _make_logits_from_classes(y_pred_classes: np.ndarray, num_classes: int) -> np.ndarray:
@@ -79,16 +60,12 @@ def test_ordinal_all_metrics_ok_for_balanced_input() -> None:
         assert r.status == MetricStatus.OK, f"{r.metric_name} unexpectedly NA: {r.reason}"
 
 
-# ---------------------------------------------------------------------------
-# Imbalance exposure: high accuracy but low macro_f1 / balanced_accuracy
-# ---------------------------------------------------------------------------
 
 
 def test_ordinal_imbalanced_high_acc_low_macro_f1() -> None:
     """Majority-class model: high accuracy masks poor performance on minority class."""
-    # 90 class-0, 5 class-1, 5 class-2 — model always predicts class-0.
     y_true = np.array([0] * 90 + [1] * 5 + [2] * 5)
-    y_pred_classes = np.zeros(100, dtype=int)   # always predict class 0
+    y_pred_classes = np.zeros(100, dtype=int)
     logits = _make_logits_from_classes(y_pred_classes, num_classes=3)
     results = compute_ordinal_metrics(y_true, logits, "dr_grade")
     acc = next(r for r in results if r.metric_name == "accuracy")
@@ -99,9 +76,6 @@ def test_ordinal_imbalanced_high_acc_low_macro_f1() -> None:
     assert bal_acc.value < 0.5, f"balanced_accuracy should reveal weakness: {bal_acc.value}"
 
 
-# ---------------------------------------------------------------------------
-# Single-class input safety
-# ---------------------------------------------------------------------------
 
 
 def test_ordinal_single_class_does_not_crash() -> None:
@@ -127,9 +101,6 @@ def test_ordinal_single_class_accuracy_still_ok() -> None:
     assert acc.status == MetricStatus.OK
 
 
-# ---------------------------------------------------------------------------
-# Per-class support
-# ---------------------------------------------------------------------------
 
 
 def test_ordinal_per_class_support_correct() -> None:
@@ -138,9 +109,9 @@ def test_ordinal_per_class_support_correct() -> None:
     results = compute_ordinal_metrics(y_true, y_pred, "dr_grade")
     acc = next(r for r in results if r.metric_name == "accuracy")
     assert acc.per_class_support is not None
-    assert acc.per_class_support[0] == 4  # four class-0
-    assert acc.per_class_support[1] == 3  # three class-1
-    assert acc.per_class_support[2] == 3  # three class-2
+    assert acc.per_class_support[0] == 4
+    assert acc.per_class_support[1] == 3
+    assert acc.per_class_support[2] == 3
 
 
 def test_ordinal_per_class_support_none_for_na_metrics() -> None:
@@ -153,13 +124,10 @@ def test_ordinal_per_class_support_none_for_na_metrics() -> None:
             assert r.per_class_support is None
 
 
-# ---------------------------------------------------------------------------
-# Sparse subgroup unchanged
-# ---------------------------------------------------------------------------
 
 
 def test_ordinal_sparse_subgroup_returns_one_na() -> None:
-    y_true = np.array([0.0, 1.0, 2.0, 0.0])  # n=4 < min_n=5
+    y_true = np.array([0.0, 1.0, 2.0, 0.0])
     logits = _make_logits_from_classes(np.array([0, 1, 2, 0]), num_classes=3)
     results = compute_ordinal_metrics(y_true, logits, "dr_grade")
     assert len(results) == 1
@@ -167,9 +135,6 @@ def test_ordinal_sparse_subgroup_returns_one_na() -> None:
     assert results[0].reason == "sparse_subgroup"
 
 
-# ---------------------------------------------------------------------------
-# Binary AUROC unaffected
-# ---------------------------------------------------------------------------
 
 
 def test_binary_auroc_unaffected_by_changes() -> None:

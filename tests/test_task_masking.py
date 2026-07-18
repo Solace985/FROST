@@ -30,9 +30,6 @@ def dummy_manifest():
     return DummyAdapter(n_patients=20).build_manifest()
 
 
-# ---------------------------------------------------------------------------
-# Missing binary label
-# ---------------------------------------------------------------------------
 
 def test_missing_binary_label_produces_mask_zero():
     enc = encode_task_target(_make(glaucoma=None), "glaucoma")
@@ -49,9 +46,6 @@ def test_missing_binary_placeholder_is_minus_one():
     assert enc.value == MISSING_CLASS_PLACEHOLDER == -1.0
 
 
-# ---------------------------------------------------------------------------
-# Observed binary labels
-# ---------------------------------------------------------------------------
 
 def test_observed_binary_zero_target_zero_mask_one():
     enc = encode_task_target(_make(glaucoma=0), "glaucoma")
@@ -63,9 +57,6 @@ def test_observed_binary_one_target_one_mask_one():
     assert enc.value == 1.0 and enc.mask == 1.0
 
 
-# ---------------------------------------------------------------------------
-# Ordinal (dr_grade 0-4)
-# ---------------------------------------------------------------------------
 
 def test_missing_ordinal_mask_zero():
     enc = encode_task_target(_make(dr_grade=None), "dr_grade")
@@ -82,9 +73,6 @@ def test_observed_ordinal_mask_one():
     assert enc.value == 2.0 and enc.mask == 1.0
 
 
-# ---------------------------------------------------------------------------
-# Regression (retinal_age)
-# ---------------------------------------------------------------------------
 
 def test_missing_regression_mask_zero_nan():
     enc = encode_task_target(_make(retinal_age=None), "retinal_age")
@@ -97,9 +85,6 @@ def test_observed_regression_mask_one():
     assert enc.mask == 1.0 and enc.value == 45.0
 
 
-# ---------------------------------------------------------------------------
-# cardiovascular_composite — continuous float regression
-# ---------------------------------------------------------------------------
 
 def test_cardiovascular_missing_mask_zero():
     enc = encode_task_target(_make(cardiovascular_composite=None), "cardiovascular_composite")
@@ -111,9 +96,6 @@ def test_cardiovascular_observed_treated_as_regression():
     assert enc.mask == 1.0 and enc.value == 0.75
 
 
-# ---------------------------------------------------------------------------
-# Sex — uses TaskDefinition.target_encoding, not hardcoded logic
-# ---------------------------------------------------------------------------
 
 def test_sex_female_uses_target_encoding():
     enc = encode_task_target(_make(sex=Sex.FEMALE), "sex")
@@ -137,9 +119,6 @@ def test_sex_none_mask_zero():
     assert enc.mask == 0.0
 
 
-# ---------------------------------------------------------------------------
-# Batch targets / masks
-# ---------------------------------------------------------------------------
 
 def test_batch_masks_length_matches_samples(dummy_manifest):
     batch = build_task_targets_and_masks(dummy_manifest, ["glaucoma", "dr_grade"])
@@ -154,9 +133,6 @@ def test_batch_mask_values_are_zero_or_one(dummy_manifest):
         assert m in (0.0, 1.0)
 
 
-# ---------------------------------------------------------------------------
-# Masked loss contract
-# ---------------------------------------------------------------------------
 
 def test_masked_loss_zero_for_missing():
     enc = encode_task_target(_make(glaucoma=None), "glaucoma")
@@ -164,9 +140,6 @@ def test_masked_loss_zero_for_missing():
     assert 1.0 * enc.mask == 0.0, "raw_loss * mask must be 0 when label is missing"
 
 
-# ---------------------------------------------------------------------------
-# FeaturePolicy applied before metadata exposure
-# ---------------------------------------------------------------------------
 
 def test_image_only_returns_no_metadata(policy, dummy_manifest):
     s = dummy_manifest[0]
@@ -206,9 +179,6 @@ def test_camera_type_blocked_by_default(policy, dummy_manifest):
     assert "camera_type" not in meta.allowed_fields
 
 
-# ---------------------------------------------------------------------------
-# observation_mask is independent of FeaturePolicy
-# ---------------------------------------------------------------------------
 
 def test_observation_mask_zero_for_allowed_but_none_field(policy):
     s = _make(age_years=None)
@@ -226,9 +196,6 @@ def test_observation_mask_one_for_observed_allowed_field(policy):
         assert meta.observation_mask["age_years"] == 1.0
 
 
-# ---------------------------------------------------------------------------
-# Unknown task fails closed
-# ---------------------------------------------------------------------------
 
 def test_unknown_task_encode_raises_key_error():
     with pytest.raises(KeyError):
@@ -240,9 +207,6 @@ def test_unknown_task_in_metadata_raises(policy):
         build_metadata_features(_make(), "totally_unknown_task_xyz_000", policy, "image_plus_metadata")
 
 
-# ---------------------------------------------------------------------------
-# macular_edema task masking (Patch 7)
-# ---------------------------------------------------------------------------
 
 def test_macular_edema_none_produces_mask_zero():
     enc = encode_task_target(_make(macular_edema=None), "macular_edema")

@@ -1,16 +1,9 @@
-"""Output-language tests (FROST test 24).
-
-The result-facing frontend must use screening/triage language, not diagnostic or
-rule-out claims, and must surface the required research-framing statements.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
 
 FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
 
-# Phrases that must never appear in the result-facing frontend.
 FORBIDDEN_PHRASES = (
     "no disease",
     "no referral needed",
@@ -22,7 +15,6 @@ FORBIDDEN_PHRASES = (
     "diagnosis",
 )
 
-# Framing statements that must be present.
 REQUIRED_PHRASES = (
     "not a medical device",
     "operating-point triage result",

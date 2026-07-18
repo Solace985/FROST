@@ -1,12 +1,3 @@
-"""
-tests/test_evaluate_checkpoint_selection.py -- Regression tests for 05_evaluate.py helpers.
-
-Covers:
-  1. _latest_run_dir priority: runs/train/ preferred over runs/fast_dev_run/, etc.
-  2. _validate_run_dir_for_eval head_type mismatch: hard error for full/internal configs
-     when eval config head_type != run resolved_config head_type.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -96,9 +87,6 @@ def test_dataset_prefix_filter(evaluate_mod, tmp_path, monkeypatch) -> None:
     assert result is None, f"Expected None for brset query when only odir run exists, got: {result}"
 
 
-# ---------------------------------------------------------------------------
-# Head-type mismatch validation in _validate_run_dir_for_eval
-# ---------------------------------------------------------------------------
 
 
 def _make_full_run_dir(run_dir: Path, head_type: str | None = None) -> None:
@@ -159,7 +147,6 @@ def test_head_type_match_linear_probe_both(evaluate_mod, tmp_path) -> None:
     run_dir = tmp_path / "runs" / "train" / "brset_20260511_lp"
     _make_full_run_dir(run_dir, head_type="linear_probe")
     eval_cfg = _full_eval_cfg(head_type="linear_probe")
-    # Must not raise SystemExit
     evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
 
 
@@ -177,9 +164,8 @@ def test_head_type_both_missing_normalizes_to_multitask(evaluate_mod, tmp_path) 
     This is the backward-compatibility path for Stage 8D-2 artifacts.
     """
     run_dir = tmp_path / "runs" / "train" / "brset_20260511_legacy"
-    _make_full_run_dir(run_dir, head_type=None)  # no head_type in resolved_config
-    eval_cfg = _full_eval_cfg(head_type=None)    # no head_type in eval config
-    # Both normalize to "multitask" → no mismatch → passes
+    _make_full_run_dir(run_dir, head_type=None)
+    eval_cfg = _full_eval_cfg(head_type=None)
     evaluate_mod._validate_run_dir_for_eval(run_dir, eval_cfg)
 
 

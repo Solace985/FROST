@@ -1,29 +1,3 @@
-"""verify_parity.py -- FROST serving-correctness gate.
-
-Two parity checks against the accepted native-392 artifacts:
-
-A. Canonical synthetic parity
-   For a deterministic synthetic RGB image, compare the app InferenceService
-   output against an INDEPENDENT inline reconstruction built directly from the
-   canonical primitives (preprocess_image -> load_backbone -> build_head ->
-   compute_referable_dr_score). Requires:
-     - max abs dr_grade-logit difference <= 1e-5 (CPU)
-     - max abs referable-score difference  <= 1e-6 (CPU)
-
-B. Study-linked local parity
-   For 3-5 locally available BRSET test images (mapped via the canonical
-   adapter), compare the app score against the expected referable score from the
-   accepted predictions.npz. Requires abs score difference < 1e-4.
-   Skipped (status="unavailable") when the local fixture cannot be assembled.
-
-This module never writes to any pipeline location. The local study-linked case
-list is written only to the ignored .local/parity_cases.local.json and never
-contains identifiers in any committed artifact.
-
-Run:
-    uv run python deploy/referable_dr_demo/analysis/verify_parity.py
-"""
-
 from __future__ import annotations
 
 import json
@@ -57,9 +31,6 @@ N_STUDY_CASES = 5
 ensure_src_importable()
 
 
-# --------------------------------------------------------------------------
-# A. Canonical synthetic parity
-# --------------------------------------------------------------------------
 def deterministic_synthetic_image(size: tuple[int, int] = (500, 480)) -> Image.Image:
     """A fixed, RNG-free RGB image (non-square, to exercise resize+centercrop)."""
     w, h = size
@@ -67,7 +38,6 @@ def deterministic_synthetic_image(size: tuple[int, int] = (500, 480)) -> Image.I
     r = (xx * 255 // max(1, w - 1)).astype(np.uint8)
     g = (yy * 255 // max(1, h - 1)).astype(np.uint8)
     b = (((xx + yy) // 2) % 256).astype(np.uint8)
-    # add a deterministic checkerboard so channels are not collinear
     check = (((xx // 16) + (yy // 16)) % 2).astype(np.uint8) * 40
     arr = np.stack([np.clip(r + check, 0, 255),
                     np.clip(g, 0, 255),
@@ -104,7 +74,7 @@ def _canonical_reference_infer(
     with torch.inference_mode():
         emb = backbone(tensor)
         logits = head(emb)[bundle.manifest["dr_grade_task_key"]]
-    logits_np = logits.detach().cpu().numpy().astype(np.float64)  # (1,5)
+    logits_np = logits.detach().cpu().numpy().astype(np.float64)
     score = float(compute_referable_dr_score(logits_np)[0])
     return logits_np[0], score
 
@@ -134,9 +104,43 @@ def canonical_synthetic_parity(
     }
 
 
-# --------------------------------------------------------------------------
-# B. Study-linked local parity
-# --------------------------------------------------------------------------
+def integrity_self_check(
+    service: inference_mod.InferenceService, bundle: bundle_mod.DeploymentBundle
+) -> dict[str, Any]:
+    """Model-load integrity check that uses NO real image and NO study data.
+
+    Runs a single forward through the already-loaded service on a deterministic
+    RANDOM (non-patient) RGB array and asserts the outputs are well-formed:
+    expected embedding dim (384), 5 dr_grade class probabilities that are finite
+    and sum to 1, and a finite referable score in [0, 1]. This is the server's
+    startup self-check: it proves the frozen model loaded and produces in-range
+    outputs, without depending on any credentialed BRSET image. The stronger
+    study-score reproduction is proven separately by the LOCAL pre-deploy parity
+    gate (:func:`study_linked_parity`).
+    """
+    rng = np.random.default_rng(20260702)
+    arr = rng.integers(0, 256, size=(480, 500, 3), dtype=np.uint8)
+    image = Image.fromarray(arr, mode="RGB")
+    result = service.infer(image)
+    probs = np.asarray(result.dr_grade_probs, dtype=np.float64)
+    score = float(result.referable_score)
+    checks = {
+        "embedding_dim_ok": bool(result.embedding_dim == bundle.embedding_dim),
+        "n_class_probs_ok": bool(probs.shape == (bundle.manifest["dr_grade_output_shape"],)),
+        "probs_finite": bool(np.all(np.isfinite(probs))),
+        "probs_sum_to_one": bool(abs(float(probs.sum()) - 1.0) <= 1e-5),
+        "score_finite": bool(np.isfinite(score)),
+        "score_in_unit_interval": bool(0.0 <= score <= 1.0),
+    }
+    passed = all(checks.values())
+    return {
+        "status": "pass" if passed else "fail",
+        "checks": checks,
+        "embedding_dim": result.embedding_dim,
+        "uses_real_image": False,
+    }
+
+
 def _import_from_string(path: str) -> Any:
     if ":" in path:
         mod_name, _, attr = path.partition(":")
@@ -221,7 +225,7 @@ def study_linked_parity(
     if "sample_id" not in data or "logit__dr_grade" not in data:
         return {"status": "unavailable", "reason": "predictions.npz missing required keys"}
     sample_ids = [str(s) for s in data["sample_id"]]
-    logits = np.asarray(data["logit__dr_grade"], dtype=np.float64)  # (N,5)
+    logits = np.asarray(data["logit__dr_grade"], dtype=np.float64)
 
     cases: list[dict[str, Any]] = []
     for sid, lg in zip(sample_ids, logits):
@@ -256,8 +260,6 @@ def study_linked_parity(
         "n_cases": len(cases),
         "max_abs_score_diff": max_diff,
         "tol": STUDY_TOL,
-        # NOTE: per-case sample_ids are intentionally NOT returned here; they are
-        # written only to the ignored .local fixture.
         "abs_diffs": [c["abs_diff"] for c in cases],
     }
 
@@ -275,9 +277,6 @@ def _write_parity_cases(preds_path: Path, cases: list[dict[str, Any]]) -> None:
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-# --------------------------------------------------------------------------
-# Entrypoint
-# --------------------------------------------------------------------------
 def run_all(write_cases: bool = True) -> dict[str, Any]:
     bundle = bundle_mod.load_validated_bundle()
     service = inference_mod.init_service(bundle)

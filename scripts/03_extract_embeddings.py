@@ -1,21 +1,4 @@
 #!/usr/bin/env python
-"""
-scripts/03_extract_embeddings.py -- Extract and cache backbone embeddings.
-
-Thin orchestration script. Business logic lives in src/retina_screen/.
-
-Usage:
-    python scripts/03_extract_embeddings.py --config configs/experiment/baseline_odir_dinov2.yaml --limit 32
-    python scripts/03_extract_embeddings.py --config configs/experiment/smoke_dummy.yaml --limit 8
-
---limit N:  extract at most N samples total; split-aware when splits.csv exists.
---overwrite: re-extract even when valid cache entries exist.
-
-Split-aware extraction (when splits.csv exists from scripts/01_make_splits.py):
-    Allocates --limit slots across splits proportionally (train 62%, val 19%, test 19%).
-    e.g. --limit 32 → train=20, val=6, test=6
-    Ensures downstream train/eval scripts have cached samples in each relevant split.
-"""
 
 from __future__ import annotations
 
@@ -44,7 +27,6 @@ from retina_screen.preprocessing import PreprocessingConfig, get_preprocessing_h
 
 logger = logging.getLogger(__name__)
 
-# Default proportional allocation across splits when using --limit.
 _SPLIT_ALLOC = {"train": 0.625, "val": 0.1875, "test": 0.1875}
 
 _STAGE8A_LIMIT_ERROR = (
@@ -63,9 +45,6 @@ _STAGE8D1_LIMIT_ERROR = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_dummy_adapter(cfg: dict):
@@ -217,13 +196,11 @@ def _select_samples_split_aware(
     split_order = ["train", "val", "test", "reliability"]
     alloc_fracs = {k: _SPLIT_ALLOC.get(k, 0.0) for k in split_order}
 
-    # Compute integer slots (floor first, then distribute remainder).
     slots: dict[str, int] = {}
     remaining = limit
     for name in split_order:
         slots[name] = int(limit * alloc_fracs[name])
         remaining -= slots[name]
-    # Distribute remainder to the splits with highest fractional part.
     if remaining > 0:
         fractional = sorted(
             split_order, key=lambda n: (limit * alloc_fracs[n]) % 1, reverse=True
@@ -254,9 +231,6 @@ def _select_samples_split_aware(
     return selected
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -294,7 +268,6 @@ def main() -> None:
     manifest = adapter.build_manifest()
     manifest_sids = [s.sample_id for s in manifest]
 
-    # --- Cache provenance check ---
     dataset_cfg = _load_dataset_config(cfg)
     prep_hash = get_preprocessing_hash(prep_config)
     cache_dir = get_cache_dir(cache_root, backbone_config.name, dataset, prep_hash)
@@ -323,11 +296,9 @@ def main() -> None:
                     recorded_root, current_root,
                 )
                 sys.exit(1)
-            # Check backbone identity where recorded. Checks "backbone" (old key) and
-            # "backbone_name" (new key) independently so old provenance files are handled.
             _backbone_checks = [
                 ("backbone_name", backbone_config.name),
-                ("backbone", backbone_config.name),  # backward compat with old provenance
+                ("backbone", backbone_config.name),
                 ("backbone_version", backbone_config.version),
                 ("backbone_source", backbone_raw.get("source", "")),
                 ("backbone_model_identifier", backbone_raw.get("model_identifier", backbone_config.version)),
@@ -349,8 +320,6 @@ def main() -> None:
                 )
                 sys.exit(1)
 
-    # Determine sample selection.
-    # These are captured for provenance; initialized here to ensure availability later.
     split: dict[str, list[str]] = {}
     splits_csv: Path | None = None
     split_counts_extracted: dict[str, int] = {}
@@ -373,7 +342,6 @@ def main() -> None:
         sid_set = set(selected_sids)
         manifest_subset = [s for s in manifest if s.sample_id in sid_set]
         logger.info("Selected %d / %d samples for extraction.", len(manifest_subset), len(manifest))
-        # Compute split counts for provenance.
         if splits_csv is not None:
             split_counts_extracted = {
                 sp: sum(1 for s in ids if s in sid_set)
@@ -384,7 +352,6 @@ def main() -> None:
     else:
         manifest_subset = manifest
         logger.info("Extracting all %d samples.", len(manifest_subset))
-        # Full extraction: compute split coverage from full manifest.
         splits_csv = _latest_splits_csv(dataset)
         if splits_csv is not None:
             split = _load_splits_csv(splits_csv)
@@ -412,7 +379,7 @@ def main() -> None:
         image_loader=lambda sample: adapter.load_image(sample.sample_id),
         batch_size=32,
         overwrite=args.overwrite,
-        limit=None,  # limit already applied above
+        limit=None,
     )
 
     failed = verify_cache_integrity(manifest_path, backbone_config.embedding_dim)
@@ -422,7 +389,6 @@ def main() -> None:
             f"{failed[:10]}"
         )
 
-    # Write/update cache provenance sidecar
     prov_data = {
         "backbone_name": backbone_config.name,
         "backbone_version": backbone_config.version,
@@ -433,7 +399,6 @@ def main() -> None:
         "dataset_root_used": current_root,
         "preprocessing_hash": prep_hash,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        # Extended fields for full-vs-limited distinguishability (Stage 8D-2A).
         "run_mode": cfg.get("run_mode", ""),
         "stage": str(cfg.get("stage", "")),
         "limit_requested": args.limit,

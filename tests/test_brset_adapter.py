@@ -1,11 +1,3 @@
-"""
-Synthetic-fixture tests for BRSETAdapter.
-
-All tests use tmp_path with minimal CSV rows and fake .jpg files.
-No real BRSET data is required.  Real-data tests are guarded with
-pytest.mark.skipif and only run when RETINA_SCREEN_BRSET_ROOT is set.
-"""
-
 from __future__ import annotations
 
 import os
@@ -26,9 +18,6 @@ from retina_screen.schema import (
 )
 from retina_screen.tasks import TASK_REGISTRY
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 _BRSET_REAL_ROOT_AVAILABLE = bool(os.environ.get("RETINA_SCREEN_BRSET_ROOT")) or Path(
     "data/brset/labels_brset.csv"
@@ -90,9 +79,6 @@ def _default_row(**overrides) -> dict:
     return base
 
 
-# ---------------------------------------------------------------------------
-# Tests — manifest and basic structure
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_synthetic_fixture_manifest(tmp_path: Path) -> None:
@@ -184,9 +170,6 @@ def test_brset_adapter_missing_age_produces_none(tmp_path: Path) -> None:
     assert sample.age_years is None, "NaN age must map to None, not 0."
 
 
-# ---------------------------------------------------------------------------
-# Tests — field mappings
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_sex_encoding(tmp_path: Path) -> None:
@@ -196,7 +179,6 @@ def test_brset_adapter_sex_encoding(tmp_path: Path) -> None:
     ]
     adapter = _make_brset_fixture(tmp_path, rows)
     manifest = adapter.build_manifest()
-    # image "00001" sorts before "00002"; patient "4001" sorts before "4002"
     sex_map = {s.sample_id: s.sex for s in manifest}
     assert sex_map["brset_s000001"] == Sex.MALE
     assert sex_map["brset_s000002"] == Sex.FEMALE
@@ -226,9 +208,6 @@ def test_brset_adapter_image_quality_label_mapping(tmp_path: Path) -> None:
     assert quality_map["brset_s000002"] == ImageQualityLabel.REJECT
 
 
-# ---------------------------------------------------------------------------
-# Tests — other_ocular computed label (Patch 4: missingness safety)
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_other_ocular_computed_correctly(tmp_path: Path) -> None:
@@ -288,9 +267,6 @@ def test_brset_adapter_other_ocular_one_positive_rest_missing(tmp_path: Path) ->
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests — macular_edema
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_macular_edema_direct_label(tmp_path: Path) -> None:
@@ -312,9 +288,6 @@ def test_brset_adapter_macular_edema_nan_produces_none(tmp_path: Path) -> None:
     assert sample.macular_edema is None, "NaN macular_edema must map to None, not 0."
 
 
-# ---------------------------------------------------------------------------
-# Tests — unsupported labels
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_cataract_is_none(tmp_path: Path) -> None:
@@ -348,9 +321,6 @@ def test_brset_adapter_pathological_myopia_deferred(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests — diabetes parsing
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_diabetes_yes_no_string(tmp_path: Path) -> None:
@@ -365,9 +335,6 @@ def test_brset_adapter_diabetes_yes_no_string(tmp_path: Path) -> None:
     assert dm_map["brset_s000002"] == 0
 
 
-# ---------------------------------------------------------------------------
-# Tests — DR grading
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_dr_grade_from_sdrg(tmp_path: Path) -> None:
@@ -380,9 +347,6 @@ def test_brset_adapter_dr_grade_from_sdrg(tmp_path: Path) -> None:
     assert sample.dr_grade_source_scheme == "DR_SDRG"
 
 
-# ---------------------------------------------------------------------------
-# Tests — task registry and public interface
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_supported_tasks_registered(tmp_path: Path) -> None:
@@ -407,11 +371,10 @@ def test_brset_adapter_stratification_columns_in_schema(tmp_path: Path) -> None:
 def test_brset_adapter_missing_image_excluded(tmp_path: Path) -> None:
     images_dir = tmp_path / "fundus_photos"
     images_dir.mkdir()
-    # Create image for first row only
     Image.new("RGB", (32, 32)).save(images_dir / "00001.jpg")
     rows = [
         _default_row(image_id="00001", patient_id="14001"),
-        _default_row(image_id="99999", patient_id="14002"),  # no image file
+        _default_row(image_id="99999", patient_id="14002"),
     ]
     csv_path = tmp_path / "labels_brset.csv"
     pd.DataFrame(rows).to_csv(csv_path, index=False)
@@ -438,9 +401,6 @@ def test_brset_adapter_no_brset_columns_in_public_interface(tmp_path: Path) -> N
         )
 
 
-# ---------------------------------------------------------------------------
-# Tests — camera/device handling (Patch 8: fail-closed for unknown cameras)
-# ---------------------------------------------------------------------------
 
 
 def test_brset_adapter_known_camera_maps_to_clinical(tmp_path: Path) -> None:
@@ -460,9 +420,6 @@ def test_brset_adapter_unknown_camera_maps_to_unknown(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Guarded real-data tests (skip if BRSET data unavailable)
-# ---------------------------------------------------------------------------
 
 _SKIP_REAL = pytest.mark.skipif(
     not _BRSET_REAL_ROOT_AVAILABLE,
@@ -515,7 +472,7 @@ def test_brset_real_canonical_ids_are_pseudonymous() -> None:
     """No canonical ID may contain a raw native integer patient or image ID."""
     adapter = BRSETAdapter()
     manifest = adapter.build_manifest()
-    for sample in manifest[:100]:  # spot-check first 100
+    for sample in manifest[:100]:
         assert re.match(r"brset_s\d{6}$", sample.sample_id), (
             f"sample_id format invalid: {sample.sample_id!r}"
         )

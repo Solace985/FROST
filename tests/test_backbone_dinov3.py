@@ -1,14 +1,3 @@
-"""
-test_backbone_dinov3.py -- Minimal B3 DINOv3-Large setup validation.
-
-Validates:
-  - Backbone config declares expected architectural properties.
-  - Experiment configs are BRSET-only, decision-027-compliant, correct metadata.
-  - DINOv3 loader raises loudly on missing checkpoint (no mock fallback).
-  - W1 compaction handles DINOv3's 201-token / 1024-dim output correctly.
-
-No real backbone loading. No weight file required. No network. No BRSET data.
-"""
 from __future__ import annotations
 
 import os
@@ -26,7 +15,6 @@ MT_CFG = REPO / "configs/experiment/stage8d35_b3_brset_dinov3_large_multitask.ya
 LP_CFG = REPO / "configs/experiment/stage8d35_b3_brset_dinov3_large_linearprobe.yaml"
 
 
-# ── Backbone config ────────────────────────────────────────────────────────────
 
 
 class TestDINOv3BackboneConfig:
@@ -58,7 +46,6 @@ class TestDINOv3BackboneConfig:
         assert self.cfg["frozen"] is True
 
     def test_no_hardcoded_path(self):
-        # checkpoint_path must be empty (resolved via env var or user-set)
         assert self.cfg.get("checkpoint_path", "") == ""
 
     def test_has_env_var_field(self):
@@ -68,7 +55,6 @@ class TestDINOv3BackboneConfig:
         assert self.cfg.get("preprocessing", "default_224") == "default_224"
 
 
-# ── Experiment configs ─────────────────────────────────────────────────────────
 
 
 class TestDINOv3MTConfig:
@@ -128,7 +114,6 @@ class TestDINOv3MTLPCacheNamespaceConsistency:
         assert mt["preprocessing"] == lp["preprocessing"] == "default_224"
 
 
-# ── Loader failure modes ──────────────────────────────────────────────────────
 
 
 class TestDINOv3LoaderFailsLoudly:
@@ -148,7 +133,7 @@ class TestDINOv3LoaderFailsLoudly:
             embedding_dim=1024,
             model_type="dinov3",
             version="lvd1689m",
-            checkpoint_path="",  # empty → must raise
+            checkpoint_path="",
             input_size=224,
             global_pool="token",
         )
@@ -176,7 +161,6 @@ class TestDINOv3LoaderFailsLoudly:
             load_backbone(cfg, torch.device("cpu"))
 
 
-# ── W1 compaction: DINOv3 token-sequence shape ────────────────────────────────
 
 
 class TestDINOv3W1Compaction:
@@ -188,11 +172,11 @@ class TestDINOv3W1Compaction:
     """
 
     _DIM = 1024
-    _SEQ_LEN = 201  # 1 CLS + 4 register + 196 patch at 224px patch-16
+    _SEQ_LEN = 201
 
     def _make_cls_view(self) -> torch.Tensor:
         tokens = torch.randn(1, self._SEQ_LEN, self._DIM)
-        return tokens[:, 0].squeeze(0)  # (1024,) view into 201×1024 backing
+        return tokens[:, 0].squeeze(0)
 
     def _storage_ratio(self, t: torch.Tensor) -> float:
         return t.untyped_storage().nbytes() / (t.numel() * t.element_size())
@@ -223,5 +207,5 @@ class TestDINOv3W1Compaction:
         cls_view = self._make_cls_view()
         compact = _compact_embedding(cls_view)
         storage_bytes = compact.untyped_storage().nbytes()
-        expected_bytes = self._DIM * 4  # float32
+        expected_bytes = self._DIM * 4
         assert storage_bytes <= expected_bytes * 2

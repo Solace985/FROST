@@ -1,8 +1,3 @@
-"""
-tests/test_schema_tasks_policy.py -- Canonical schema, task registry, and policy contracts.
-Stage 2 / Batch 2 gate test.
-"""
-
 from __future__ import annotations
 import pytest
 from pydantic import ValidationError
@@ -20,7 +15,6 @@ def make(**kw):
     return CanonicalSample(**{**_REQ, **kw})
 
 
-# --- Required fields ---
 
 def test_sample_requires_sample_id():
     with pytest.raises(ValidationError):
@@ -51,7 +45,6 @@ def test_required_identifier_fields_reject_blank_strings(field):
         CanonicalSample(**bad)
 
 
-# --- Missing values default to None, not 0 ---
 
 def test_binary_labels_default_to_none():
     s = make()
@@ -74,7 +67,6 @@ def test_metadata_defaults_to_none():
     assert s.camera_type is None
 
 
-# --- Binary label validation ---
 
 def test_binary_label_0_valid():
     assert make(diabetes=0).diabetes == 0
@@ -103,7 +95,6 @@ def test_cardiovascular_composite_rejects_out_of_range_values(value):
         make(cardiovascular_composite=value)
 
 
-# --- DR grade validation ---
 
 def test_dr_grade_0_valid():
     assert make(dr_grade=0).dr_grade == 0
@@ -120,7 +111,6 @@ def test_dr_grade_minus1_invalid():
         make(dr_grade=-1)
 
 
-# --- Enum fields ---
 
 def test_sex_enum_accepted():
     assert make(sex=Sex.FEMALE).sex == Sex.FEMALE
@@ -136,14 +126,12 @@ def test_eye_laterality_enum():
     assert make(eye_laterality=EyeLaterality.LEFT).eye_laterality == EyeLaterality.LEFT
 
 
-# --- Extra fields rejected ---
 
 def test_extra_fields_rejected():
     with pytest.raises(ValidationError):
         CanonicalSample(**_REQ, odir_native_column="x")
 
 
-# --- validate_sample helper ---
 
 def test_validate_sample_returns_instance():
     assert isinstance(validate_sample(_REQ), CanonicalSample)
@@ -153,7 +141,6 @@ def test_validate_sample_raises_on_bad_data():
         validate_sample({**_REQ, "diabetes": 99})
 
 
-# --- Task registry: target columns in schema ---
 
 def test_all_task_target_columns_in_schema():
     schema_fields = set(CanonicalSample.model_fields.keys())
@@ -163,7 +150,6 @@ def test_all_task_target_columns_in_schema():
         )
 
 
-# --- Task registry: required attributes ---
 
 def test_all_tasks_have_required_attributes():
     for name, task in TASK_REGISTRY.items():
@@ -178,7 +164,6 @@ def test_all_tasks_have_required_attributes():
         assert hasattr(task, "target_encoding")
 
 
-# --- Ordinal tasks have num_classes ---
 
 def test_ordinal_tasks_have_num_classes():
     for name, task in TASK_REGISTRY.items():
@@ -197,7 +182,6 @@ def test_dr_grade_is_ordinal_5_classes():
     assert dr.num_classes == 5
 
 
-# --- Lookup helpers ---
 
 def test_get_task_returns_definition():
     assert get_task("glaucoma").name == "glaucoma"
@@ -211,7 +195,6 @@ def test_task_registry_key_error_direct():
         _ = TASK_REGISTRY["definitely_not_a_task"]
 
 
-# --- Proxy / headline flags ---
 
 def test_diabetes_is_proxy():
     assert TASK_REGISTRY["diabetes"].label_quality == LabelQuality.PROXY
@@ -239,7 +222,6 @@ def test_sex_task_has_explicit_target_encoding():
     assert Sex.UNKNOWN not in encoding
 
 
-# --- Field-set constants ---
 
 def test_label_fields_not_empty():
     assert len(CANONICAL_LABEL_FIELDS) > 0
@@ -252,9 +234,6 @@ def test_label_and_metadata_no_overlap():
     assert len(overlap) == 0, f"Label/metadata fields overlap: {overlap}"
 
 
-# ---------------------------------------------------------------------------
-# macular_edema canonical schema / task coverage (Patch 7)
-# ---------------------------------------------------------------------------
 
 def test_macular_edema_in_canonical_sample_fields():
     schema_fields = set(CanonicalSample.model_fields.keys())

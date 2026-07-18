@@ -1,28 +1,3 @@
-"""
-test_odir_adapter.py -- Tier 6 tests for the ODIR-5K adapter.
-
-Synthetic fixtures only for CI (no real dataset required).
-A separate guarded test class runs real-dataset smoke checks when
-ODIR-5K/data.xlsx exists locally.
-
-Covers:
-- bilateral eye sample expansion
-- sample_id / patient_id naming
-- eye laterality
-- per-eye keyword label inference (positive / uncertain / normal / ambiguous)
-- patient-level negative propagation
-- other_ocular catch-all propagation
-- sex, age mapping
-- image_quality_label = None always, with quality columns empty
-- dr_grade NOT in supported tasks
-- H maps to hypertension weak proxy, not hypertensive_retinopathy
-- supported task list exact match
-- stratification columns
-- load_image / load_sample
-- validate() passes
-- split_patients compatibility
-"""
-
 from __future__ import annotations
 
 import io
@@ -37,9 +12,6 @@ from retina_screen.schema import CanonicalSample, EyeLaterality, Sex
 from retina_screen.splitting import split_patients
 
 
-# ---------------------------------------------------------------------------
-# Synthetic fixture helpers
-# ---------------------------------------------------------------------------
 
 _EXPECTED_TASKS = [
     "glaucoma",
@@ -140,18 +112,12 @@ def manifest(adapter: ODIRAdapter) -> list[CanonicalSample]:
     return adapter.build_manifest()
 
 
-# ---------------------------------------------------------------------------
-# 1. Bilateral expansion
-# ---------------------------------------------------------------------------
 
 
 def test_three_patients_produce_six_samples(manifest: list[CanonicalSample]) -> None:
     assert len(manifest) == 6, f"Expected 6 samples, got {len(manifest)}"
 
 
-# ---------------------------------------------------------------------------
-# 2-3. sample_id / patient_id naming
-# ---------------------------------------------------------------------------
 
 
 def test_sample_ids_follow_odir_pattern(manifest: list[CanonicalSample]) -> None:
@@ -167,9 +133,6 @@ def test_patient_ids_follow_odir_pattern(manifest: list[CanonicalSample]) -> Non
         assert s.patient_id.startswith("odir_"), f"Bad patient_id: {s.patient_id}"
 
 
-# ---------------------------------------------------------------------------
-# 4-5. Eye laterality
-# ---------------------------------------------------------------------------
 
 
 def test_left_eye_has_correct_laterality(manifest: list[CanonicalSample]) -> None:
@@ -186,9 +149,6 @@ def test_right_eye_has_correct_laterality(manifest: list[CanonicalSample]) -> No
     )
 
 
-# ---------------------------------------------------------------------------
-# 6. Patient grouping
-# ---------------------------------------------------------------------------
 
 
 def test_both_eyes_share_patient_id(manifest: list[CanonicalSample]) -> None:
@@ -205,18 +165,12 @@ def test_both_eyes_share_patient_id(manifest: list[CanonicalSample]) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 7. dataset_source
-# ---------------------------------------------------------------------------
 
 
 def test_dataset_source_is_odir(manifest: list[CanonicalSample]) -> None:
     assert all(s.dataset_source == "odir" for s in manifest)
 
 
-# ---------------------------------------------------------------------------
-# 8. Schema validation
-# ---------------------------------------------------------------------------
 
 
 def test_all_samples_validate_against_schema(manifest: list[CanonicalSample]) -> None:
@@ -226,9 +180,6 @@ def test_all_samples_validate_against_schema(manifest: list[CanonicalSample]) ->
         )
 
 
-# ---------------------------------------------------------------------------
-# 9. "suspected glaucoma" keyword → glaucoma=None
-# ---------------------------------------------------------------------------
 
 
 def test_suspected_keyword_maps_to_none(tmp_path: Path) -> None:
@@ -242,13 +193,9 @@ def test_suspected_keyword_maps_to_none(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 10. "normal fundus" alone (G=1) → glaucoma=0 for that eye
-# ---------------------------------------------------------------------------
 
 
 def test_normal_fundus_alone_with_g1_yields_zero(manifest: list[CanonicalSample]) -> None:
-    # Patient 10: right eye has G=1 and keyword "normal fundus".
     right = next(
         s for s in manifest if s.patient_id == "odir_10" and s.sample_id.endswith("_R")
     )
@@ -257,9 +204,6 @@ def test_normal_fundus_alone_with_g1_yields_zero(manifest: list[CanonicalSample]
     )
 
 
-# ---------------------------------------------------------------------------
-# 11. "normal fundus" + other abnormal term → glaucoma=None (not blindly 0)
-# ---------------------------------------------------------------------------
 
 
 def test_normal_plus_abnormal_is_not_blindly_zero(tmp_path: Path) -> None:
@@ -268,17 +212,12 @@ def test_normal_plus_abnormal_is_not_blindly_zero(tmp_path: Path) -> None:
     root = _make_odir_root(tmp_path / "case11", rows)
     a = ODIRAdapter(dataset_root=root)
     left = next(s for s in a.build_manifest() if s.sample_id.endswith("_L"))
-    # Keyword set is NOT exclusively normal (also has "drusen") and doesn't have
-    # a glaucoma keyword → ambiguous → None.
     assert left.glaucoma is None, (
         f"Mixed normal+drusen keywords with G=1 should yield glaucoma=None, "
         f"got {left.glaucoma}"
     )
 
 
-# ---------------------------------------------------------------------------
-# 12. "glaucoma" keyword + G=1 → glaucoma=1
-# ---------------------------------------------------------------------------
 
 
 def test_glaucoma_keyword_yields_one(manifest: list[CanonicalSample]) -> None:
@@ -290,9 +229,6 @@ def test_glaucoma_keyword_yields_one(manifest: list[CanonicalSample]) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 13. G=0 → glaucoma=0 for both eyes
-# ---------------------------------------------------------------------------
 
 
 def test_g0_yields_glaucoma_zero_both_eyes(manifest: list[CanonicalSample]) -> None:
@@ -304,9 +240,6 @@ def test_g0_yields_glaucoma_zero_both_eyes(manifest: list[CanonicalSample]) -> N
             )
 
 
-# ---------------------------------------------------------------------------
-# 14. D=1 + DR keyword → diabetes=1
-# ---------------------------------------------------------------------------
 
 
 def test_dr_keyword_yields_diabetes_one(manifest: list[CanonicalSample]) -> None:
@@ -318,9 +251,6 @@ def test_dr_keyword_yields_diabetes_one(manifest: list[CanonicalSample]) -> None
     )
 
 
-# ---------------------------------------------------------------------------
-# 15. D=1 + "normal fundus" → diabetes=0 for that eye
-# ---------------------------------------------------------------------------
 
 
 def test_normal_fundus_with_d1_yields_diabetes_zero(manifest: list[CanonicalSample]) -> None:
@@ -332,9 +262,6 @@ def test_normal_fundus_with_d1_yields_diabetes_zero(manifest: list[CanonicalSamp
     )
 
 
-# ---------------------------------------------------------------------------
-# 16. D=1 + ambiguous non-DR keyword → diabetes=None
-# ---------------------------------------------------------------------------
 
 
 def test_ambiguous_keyword_with_d1_yields_none(tmp_path: Path) -> None:
@@ -349,22 +276,16 @@ def test_ambiguous_keyword_with_d1_yields_none(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 17. D=0 → diabetes=0 for both eyes
-# ---------------------------------------------------------------------------
 
 
 def test_d0_yields_diabetes_zero_both_eyes(manifest: list[CanonicalSample]) -> None:
     for s in manifest:
-        if s.patient_id == "odir_10":  # G=1 patient, D=0
+        if s.patient_id == "odir_10":
             assert s.diabetes == 0, (
                 f"D=0 should yield diabetes=0, got {s.diabetes} for {s.sample_id}"
             )
 
 
-# ---------------------------------------------------------------------------
-# 18. H=1 + "hypertensive retinopathy" keyword -> hypertension=1
-# ---------------------------------------------------------------------------
 
 
 def test_hypertensive_retinopathy_keyword_yields_hypertension_one(
@@ -379,9 +300,6 @@ def test_hypertensive_retinopathy_keyword_yields_hypertension_one(
             )
 
 
-# ---------------------------------------------------------------------------
-# 19. H=0 -> hypertension=0 for both eyes
-# ---------------------------------------------------------------------------
 
 
 def test_h0_yields_hypertension_zero(manifest: list[CanonicalSample]) -> None:
@@ -393,9 +311,6 @@ def test_h0_yields_hypertension_zero(manifest: list[CanonicalSample]) -> None:
             )
 
 
-# ---------------------------------------------------------------------------
-# 20. O=1 → other_ocular=1 for both eyes (catch-all, no keyword inference)
-# ---------------------------------------------------------------------------
 
 
 def test_o1_yields_other_ocular_one_both_eyes(manifest: list[CanonicalSample]) -> None:
@@ -407,9 +322,6 @@ def test_o1_yields_other_ocular_one_both_eyes(manifest: list[CanonicalSample]) -
             )
 
 
-# ---------------------------------------------------------------------------
-# 21. O=0 → other_ocular=0 for both eyes
-# ---------------------------------------------------------------------------
 
 
 def test_o0_yields_other_ocular_zero(manifest: list[CanonicalSample]) -> None:
@@ -421,9 +333,6 @@ def test_o0_yields_other_ocular_zero(manifest: list[CanonicalSample]) -> None:
             )
 
 
-# ---------------------------------------------------------------------------
-# 22-23. Sex mapping
-# ---------------------------------------------------------------------------
 
 
 def test_female_maps_to_sex_female(manifest: list[CanonicalSample]) -> None:
@@ -436,9 +345,6 @@ def test_male_maps_to_sex_male(manifest: list[CanonicalSample]) -> None:
     assert all(s.sex == Sex.MALE for s in male_samples)
 
 
-# ---------------------------------------------------------------------------
-# 24. age_years is numeric
-# ---------------------------------------------------------------------------
 
 
 def test_age_years_is_numeric(manifest: list[CanonicalSample]) -> None:
@@ -449,9 +355,6 @@ def test_age_years_is_numeric(manifest: list[CanonicalSample]) -> None:
             )
 
 
-# ---------------------------------------------------------------------------
-# 25. image_quality_label = None for all samples
-# ---------------------------------------------------------------------------
 
 
 def test_image_quality_label_is_none(manifest: list[CanonicalSample]) -> None:
@@ -464,9 +367,6 @@ def test_quality_columns_empty_when_quality_not_populated(adapter: ODIRAdapter) 
     assert adapter.get_quality_columns() == []
 
 
-# ---------------------------------------------------------------------------
-# 26. dr_grade NOT in get_supported_tasks()
-# ---------------------------------------------------------------------------
 
 
 def test_dr_grade_not_in_supported_tasks(adapter: ODIRAdapter) -> None:
@@ -475,9 +375,6 @@ def test_dr_grade_not_in_supported_tasks(adapter: ODIRAdapter) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 27. H is exposed only as hypertension weak proxy in Stage 7
-# ---------------------------------------------------------------------------
 
 
 def test_h_label_exposed_as_hypertension_weak_proxy(adapter: ODIRAdapter) -> None:
@@ -491,9 +388,6 @@ def test_h_label_exposed_as_hypertension_weak_proxy(adapter: ODIRAdapter) -> Non
     )
 
 
-# ---------------------------------------------------------------------------
-# 28. get_supported_tasks() returns exactly the 7 expected tasks
-# ---------------------------------------------------------------------------
 
 
 def test_supported_tasks_exact(adapter: ODIRAdapter) -> None:
@@ -511,9 +405,6 @@ def test_dataset_audit_marks_h_as_weak_proxy(adapter: ODIRAdapter) -> None:
     assert "not structured clinical hypertension" in warnings
 
 
-# ---------------------------------------------------------------------------
-# Audit provenance fields
-# ---------------------------------------------------------------------------
 
 
 def test_dataset_audit_provenance_fields_present(
@@ -558,9 +449,6 @@ def test_excluded_testing_directories_empty_when_absent(adapter: ODIRAdapter) ->
     assert audit["excluded_testing_directories"] == []
 
 
-# ---------------------------------------------------------------------------
-# 29. Stratification columns
-# ---------------------------------------------------------------------------
 
 
 def test_stratification_columns_include_required(adapter: ODIRAdapter) -> None:
@@ -571,9 +459,6 @@ def test_stratification_columns_include_required(adapter: ODIRAdapter) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 30. load_image returns PIL Image
-# ---------------------------------------------------------------------------
 
 
 def test_load_image_returns_pil_image(adapter: ODIRAdapter, manifest: list[CanonicalSample]) -> None:
@@ -583,9 +468,6 @@ def test_load_image_returns_pil_image(adapter: ODIRAdapter, manifest: list[Canon
     )
 
 
-# ---------------------------------------------------------------------------
-# 31. Missing image file → FileNotFoundError
-# ---------------------------------------------------------------------------
 
 
 def test_missing_image_reference_excluded_and_audited(tmp_path: Path) -> None:
@@ -608,9 +490,6 @@ def test_load_image_missing_after_manifest_raises_file_not_found(tmp_path: Path)
         a.load_image(left.sample_id)
 
 
-# ---------------------------------------------------------------------------
-# 32. split_patients runs without error on synthetic manifest
-# ---------------------------------------------------------------------------
 
 
 def test_split_patients_compatible_ten_patients(tmp_path: Path) -> None:
@@ -625,9 +504,6 @@ def test_split_patients_compatible_ten_patients(tmp_path: Path) -> None:
     assert assigned == all_ids
 
 
-# ---------------------------------------------------------------------------
-# Full-width comma parsing
-# ---------------------------------------------------------------------------
 
 
 def test_fullwidth_comma_parsed_correctly(tmp_path: Path) -> None:
@@ -638,15 +514,11 @@ def test_fullwidth_comma_parsed_correctly(tmp_path: Path) -> None:
     root = _make_odir_root(tmp_path / "fw_comma", rows)
     a = ODIRAdapter(dataset_root=root)
     left = next(s for s in a.build_manifest() if s.sample_id.endswith("_L"))
-    # "glaucoma" is one of the tokens → glaucoma=1
     assert left.glaucoma == 1, (
         f"Full-width comma should be parsed; expected glaucoma=1, got {left.glaucoma}"
     )
 
 
-# ---------------------------------------------------------------------------
-# Guarded real ODIR smoke tests (skipped in CI when dataset absent)
-# ---------------------------------------------------------------------------
 
 
 _ODIR_XLSX = Path("data/ODIR-5K/ODIR-5K/ODIR-5K/data.xlsx")
@@ -686,7 +558,6 @@ class TestODIRRealSmoke:
     def test_no_schema_validation_errors_on_sample(
         self, real_manifest: list[CanonicalSample]
     ) -> None:
-        # Spot-check 50 evenly-spaced samples.
         step = max(1, len(real_manifest) // 50)
         for sample in real_manifest[::step]:
             assert isinstance(sample, CanonicalSample), (

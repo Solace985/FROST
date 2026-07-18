@@ -1,13 +1,3 @@
-"""
-core.py -- Project-level utilities: config loading, logging, seeding, run directories.
-
-Owns: YAML loading, logging setup, deterministic seeding, run directory creation,
-path helpers, git/environment capture, device selection.
-
-Must not contain: schema definitions, task definitions, adapter logic, model
-architecture, training loops, or evaluation metrics.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -23,9 +13,6 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 
 
 def setup_logging(
@@ -50,9 +37,6 @@ def setup_logging(
     logger.debug("Logging configured at level=%s", level.upper())
 
 
-# ---------------------------------------------------------------------------
-# Seeding
-# ---------------------------------------------------------------------------
 
 
 def seed_everything(seed: int) -> None:
@@ -70,9 +54,6 @@ def seed_everything(seed: int) -> None:
     logger.debug("Global seed set to %d", seed)
 
 
-# ---------------------------------------------------------------------------
-# Config loading
-# ---------------------------------------------------------------------------
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
@@ -102,9 +83,6 @@ def merge_configs(*cfgs: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
-# ---------------------------------------------------------------------------
-# Run directory
-# ---------------------------------------------------------------------------
 
 
 def make_run_dir(base: str | Path, run_name: str) -> Path:
@@ -130,9 +108,6 @@ def save_resolved_config(cfg: dict[str, Any], run_dir: str | Path) -> Path:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Path helpers
-# ---------------------------------------------------------------------------
 
 
 def ensure_dir(path: str | Path) -> Path:
@@ -151,9 +126,6 @@ def project_root() -> Path:
     raise RuntimeError("Could not locate project root (no pyproject.toml found)")
 
 
-# ---------------------------------------------------------------------------
-# Git / environment capture
-# ---------------------------------------------------------------------------
 
 
 def capture_git_info() -> dict[str, str]:
@@ -194,9 +166,6 @@ def capture_env_info() -> dict[str, str]:
     return info
 
 
-# ---------------------------------------------------------------------------
-# Device selection
-# ---------------------------------------------------------------------------
 
 
 def get_device() -> Any:

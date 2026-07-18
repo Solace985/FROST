@@ -1,23 +1,4 @@
 #!/usr/bin/env python
-"""
-scripts/04_train.py -- Train a multi-task head on cached embeddings.
-
-Thin orchestration script. Business logic lives in src/retina_screen/.
-
-Usage:
-    python scripts/04_train.py --config configs/experiment/stage8d2_brset_resnet50_full_multitask.yaml
-    python scripts/04_train.py --config configs/experiment/... --fast_dev_run
-    python scripts/04_train.py --config configs/experiment/... \
-        --training-config configs/training/standard.yaml
-
---fast_dev_run: 1 epoch, mini-batch, no early stopping. Always saves artifacts.
---training-config: path to training hyperparameter YAML (default: configs/training/standard.yaml).
-    Experiment config keys override training config keys.
-
-Prerequisites:
-    scripts/01_make_splits.py --config <same_config>
-    scripts/03_extract_embeddings.py --config <same_config>
-"""
 
 from __future__ import annotations
 
@@ -68,9 +49,6 @@ from retina_screen.training import (
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_dummy_adapter(cfg: dict):
@@ -216,9 +194,6 @@ def _compute_val_macro_auroc(
     return sum(aurocs) / len(aurocs)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -237,7 +212,6 @@ def main() -> None:
 
     setup_logging()
 
-    # --- Load and merge configs (training_config is base; experiment config wins) ---
     training_cfg = load_config(args.training_config)
     experiment_cfg = load_config(args.config)
     cfg: dict[str, Any] = {**training_cfg, **experiment_cfg}
@@ -255,7 +229,6 @@ def main() -> None:
     prep_hash = get_preprocessing_hash(prep_config)
     embedding_dim = backbone_config.embedding_dim
 
-    # --- Training hyperparameters (all from merged config; no hardcoded values) ---
     optimizer_name = str(cfg.get("optimizer", "adamw")).lower()
     lr = float(cfg.get("lr", 1e-4))
     weight_decay = float(cfg.get("weight_decay", 1e-2))
@@ -275,7 +248,6 @@ def main() -> None:
         warmup_epochs, clip_norm, class_w_enabled, es_patience,
     )
 
-    # --- Require splits ---
     splits_dir = _latest_splits_dir(dataset)
     if splits_dir is None or not (splits_dir / "splits.csv").exists():
         logger.error(
@@ -286,7 +258,6 @@ def main() -> None:
     logger.info("Loading splits from: %s", splits_dir / "splits.csv")
     split = _load_splits_csv(splits_dir / "splits.csv")
 
-    # --- Require embedding manifest ---
     manifest_path = _latest_manifest_path(
         backbone_config.name, dataset, prep_hash, cache_root
     )
@@ -300,13 +271,11 @@ def main() -> None:
     emb_records = load_embedding_manifest(manifest_path)
     cached_ids = {r["sample_id"]: r for r in emb_records}
 
-    # --- Build adapter + manifest ---
     adapter = _build_adapter(cfg)
     manifest_samples = adapter.build_manifest()
     sample_lookup = {s.sample_id: s for s in manifest_samples}
     supported_tasks = adapter.get_supported_tasks()
 
-    # --- Intersect train split with cached embeddings ---
     train_sids_all = split.get("train", [])
     train_cached = [sid for sid in train_sids_all if sid in cached_ids and sid in sample_lookup]
     logger.info("Train split: %d total, %d with cached embeddings", len(train_sids_all), len(train_cached))
@@ -314,7 +283,6 @@ def main() -> None:
         logger.error("No cached embeddings found for train split. Run scripts/03_extract_embeddings.py first.")
         sys.exit(1)
 
-    # --- Intersect val split with cached embeddings ---
     val_sids_all = split.get("val", [])
     val_cached = [sid for sid in val_sids_all if sid in cached_ids and sid in sample_lookup]
     logger.info("Val split: %d total, %d with cached embeddings", len(val_sids_all), len(val_cached))
@@ -322,26 +290,22 @@ def main() -> None:
     if not has_val:
         logger.warning("No val embeddings available; early stopping metric will always be None.")
 
-    # --- Load train embeddings + targets/masks ---
     train_emb, train_samples = _load_split_embeddings(train_cached, cached_ids, sample_lookup, embedding_dim)
     train_batch = build_task_targets_and_masks(train_samples, supported_tasks)
     train_targets = {t: torch.tensor(train_batch.targets[t]) for t in supported_tasks}
     train_masks = {t: torch.tensor(train_batch.masks[t]) for t in supported_tasks}
     logger.info("Train embeddings loaded: shape=%s", list(train_emb.shape))
 
-    # --- Load val embeddings + targets/masks (numpy format for evaluate_predictions) ---
     val_emb: torch.Tensor | None = None
     val_targets_np: dict | None = None
     val_masks_np: dict | None = None
     if has_val:
         val_emb, val_samples = _load_split_embeddings(val_cached, cached_ids, sample_lookup, embedding_dim)
         val_batch = build_task_targets_and_masks(val_samples, supported_tasks)
-        val_targets_np = val_batch.targets   # dict of numpy arrays (evaluate_predictions interface)
-        val_masks_np = val_batch.masks       # dict of numpy arrays
+        val_targets_np = val_batch.targets
+        val_masks_np = val_batch.masks
         logger.info("Val embeddings loaded: shape=%s", list(val_emb.shape))
 
-    # --- F1 single-task restriction: filter to one task if selected_task is set ---
-    # Additive only; when selected_task is absent, behaviour is unchanged (all tasks used).
     _selected_task = cfg.get("selected_task")
     if _selected_task is not None:
         if _selected_task not in supported_tasks:
@@ -354,7 +318,6 @@ def main() -> None:
         supported_tasks = [_selected_task]
         logger.info("F1 single-task mode: restricting training to selected_task=%r", _selected_task)
 
-    # --- Mandatory FeaturePolicy gate (train samples) ---
     feature_policy = FeaturePolicy()
     mode = cfg.get("mode", "image_only")
     for sample in train_samples:
@@ -368,13 +331,11 @@ def main() -> None:
 
     logger.info("Training: %d samples, tasks=%s", len(train_samples), supported_tasks)
 
-    # --- Model (head type selected from config; defaults to "multitask" for backward compat) ---
     head_type = str(cfg.get("head_type", "multitask"))
     model = build_head(embedding_dim=embedding_dim, task_names=supported_tasks, head_type=head_type)
     weighter = KendallUncertaintyWeighting(task_names=supported_tasks)
     params = list(model.parameters()) + list(weighter.parameters())
 
-    # --- Optimizer (from config; no hardcoded defaults) ---
     if optimizer_name == "adamw":
         optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     elif optimizer_name == "adam":
@@ -382,9 +343,7 @@ def main() -> None:
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name!r}. Supported: 'adamw', 'adam'.")
 
-    # --- LR scheduler: linear warmup then cosine annealing ---
     def lr_lambda(epoch: int) -> float:
-        # Use (epoch + 1) so the first optimizer step runs at LR > 0 (not 0).
         if warmup_epochs > 0 and epoch < warmup_epochs:
             return (epoch + 1) / warmup_epochs
         t = epoch - warmup_epochs
@@ -395,15 +354,12 @@ def main() -> None:
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    # --- Early stopping ---
     early_stopping = EarlyStopping(patience=es_patience, mode="max")
 
-    # --- Seeded generator for reproducible mini-batch shuffling ---
     generator = torch.Generator()
     generator.manual_seed(seed)
     logger.info("Batch shuffling generator seeded with seed=%d", seed)
 
-    # --- Class weights (disabled for standard corrected baseline) ---
     if class_w_enabled:
         class_weights = compute_class_weights(
             train_targets, train_masks, supported_tasks, max_weight=max_class_weight
@@ -413,7 +369,6 @@ def main() -> None:
         class_weights = None
         logger.info("Class weighting DISABLED (standard corrected baseline).")
 
-    # --- Dynamic CSV fieldnames ---
     task_loss_fields = [f"train_loss_{t}" for t in supported_tasks]
     log_sigma_fields = [f"log_sigma_{t}" for t in supported_tasks]
     csv_fields = [
@@ -421,14 +376,12 @@ def main() -> None:
         "val_macro_auroc", *task_loss_fields, *log_sigma_fields, "epoch_time_s",
     ]
 
-    # --- Create run directory before training loop ---
     run_dir = make_run_dir(
         Path("runs") / ("fast_dev_run" if args.fast_dev_run else "train"),
         dataset,
     )
     logger.info("Run directory: %s", run_dir)
 
-    # --- Training loop ---
     train_log: list[dict] = []
     best_val_metric: float | None = None
     best_epoch: int = -1
@@ -452,7 +405,6 @@ def main() -> None:
         log_sigmas = get_kendall_log_sigmas(weighter)
         epoch_time = time.monotonic() - epoch_start
 
-        # Validation macro-AUROC for early stopping
         val_macro_auroc = _compute_val_macro_auroc(
             model, val_emb, val_targets_np, val_masks_np, supported_tasks, device
         )
@@ -484,7 +436,6 @@ def main() -> None:
                 log_sigmas.get(tn, float("nan")),
             )
 
-        # Save best-val checkpoint when validation metric improves
         if val_macro_auroc is not None and (
             best_val_metric is None or val_macro_auroc > best_val_metric
         ):
@@ -497,7 +448,6 @@ def main() -> None:
                 best_val_metric, epoch,
             )
 
-        # Check early stopping (skip in fast_dev_run)
         if not args.fast_dev_run and early_stopping.step(val_macro_auroc):
             early_stop_triggered = True
             early_stop_epoch = epoch
@@ -513,11 +463,9 @@ def main() -> None:
             logger.info("fast_dev_run: stopping after 1 epoch.")
             break
 
-    # Always save last-epoch weights (reference; model_checkpoint.pt is best-val)
     torch.save(model.state_dict(), run_dir / "model_last.pt")
     logger.info("Saved model_last.pt (last-epoch reference).")
 
-    # Fallback: if val was always NA, model_checkpoint.pt was never written
     if not best_checkpoint_saved:
         torch.save(model.state_dict(), run_dir / "model_checkpoint.pt")
         logger.warning(
@@ -525,7 +473,6 @@ def main() -> None:
             "Saved last-epoch weights as model_checkpoint.pt."
         )
 
-    # --- Save artifacts ---
     actual_epochs_run = len(train_log)
     total_steps = sum(int(r["n_optimizer_steps"]) for r in train_log)
     steps_per_epoch = int(epoch_result.get("n_optimizer_steps", 0)) if epoch_result else 0
@@ -582,7 +529,7 @@ def main() -> None:
         "best_val_macro_auroc": best_val_metric,
         "n_optimizer_steps_per_epoch": steps_per_epoch,
         "total_optimizer_steps": total_steps,
-        "n_steps": total_steps,  # backward-compat alias
+        "n_steps": total_steps,
         "train_loss_final": train_log[-1]["train_loss"] if train_log else None,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

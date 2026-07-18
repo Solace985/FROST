@@ -1,5 +1,3 @@
-"""Privacy / storage / no-network tests (FROST tests 18, 20)."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -38,7 +36,6 @@ def _non_test_sources() -> list[Path]:
 
 def test_no_upload_persistence(client, png_bytes):
     """18. Uploads are processed in memory; nothing is persisted to disk."""
-    # privacy logger structurally rejects identity fields
     with pytest.raises(ValueError):
         privacy._assert_permitted({"filename": "x"})
 
@@ -47,7 +44,6 @@ def test_no_upload_persistence(client, png_bytes):
     )
     assert resp.status_code in (200, 503)
 
-    # No uploads directory and no raster image files written anywhere under the app.
     assert not (DEMO_ROOT / "uploads").exists()
     rasters = [
         p
@@ -60,7 +56,6 @@ def test_no_upload_persistence(client, png_bytes):
 
 def test_no_external_network_dependency():
     """20. No demonstrator source performs outbound network access."""
-    # privacy guard always-on (score/identifier fields can never be logged)
     with pytest.raises(ValueError):
         privacy._assert_permitted({"score": 0.5})
 

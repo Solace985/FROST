@@ -1,11 +1,3 @@
-"""
-tests/test_training_infrastructure.py -- Training infrastructure correctness tests.
-
-Verifies: mini-batch batching, config-driven hyperparameters, AdamW usage,
-LR warmup/cosine schedule, EarlyStopping, class weight computation,
-Kendall log_sigma logging, and backward compatibility.
-"""
-
 from __future__ import annotations
 
 import math
@@ -31,12 +23,9 @@ from retina_screen.training import (
 from retina_screen.core import load_config
 
 
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
 
-BINARY_TASK = "diabetes"        # a known binary task in TASK_REGISTRY
-ORDINAL_TASK = "dr_grade"       # a known ordinal task in TASK_REGISTRY
+BINARY_TASK = "diabetes"
+ORDINAL_TASK = "dr_grade"
 TASKS = [BINARY_TASK, ORDINAL_TASK]
 EMB_DIM = 8
 
@@ -77,9 +66,6 @@ def _make_batch(n: int, task_names=None):
     return emb, targets, masks
 
 
-# ---------------------------------------------------------------------------
-# 1. Mini-batch: n_optimizer_steps > 1 when n > batch_size
-# ---------------------------------------------------------------------------
 
 def test_train_one_epoch_multiple_steps():
     """When N > batch_size, train_one_epoch must perform more than one optimizer step."""
@@ -93,7 +79,6 @@ def test_train_one_epoch_multiple_steps():
         model, optimizer, emb, targets, masks, TASKS,
         batch_size=batch_size, weighter=weighter,
     )
-    # ceil(500 / 128) = 4
     assert result["n_optimizer_steps"] >= 3, (
         f"Expected >= 3 optimizer steps for n={n}, batch_size={batch_size}, "
         f"got {result['n_optimizer_steps']}"
@@ -103,9 +88,6 @@ def test_train_one_epoch_multiple_steps():
     )
 
 
-# ---------------------------------------------------------------------------
-# 2. Mini-batch: n_optimizer_steps == 1 when batch_size >= n
-# ---------------------------------------------------------------------------
 
 def test_train_one_epoch_single_step_when_batch_covers_all():
     """When batch_size >= n, there is exactly one optimizer step per epoch."""
@@ -125,9 +107,6 @@ def test_train_one_epoch_single_step_when_batch_covers_all():
     )
 
 
-# ---------------------------------------------------------------------------
-# 3. Hyperparameters loaded from standard.yaml
-# ---------------------------------------------------------------------------
 
 def test_hyperparameters_from_standard_yaml():
     """configs/training/standard.yaml must contain all required training keys."""
@@ -142,9 +121,6 @@ def test_hyperparameters_from_standard_yaml():
     assert abs(cfg.get("weight_decay", 0) - 1e-2) < 1e-9, f"weight_decay must be 1e-2"
 
 
-# ---------------------------------------------------------------------------
-# 4. AdamW is used when optimizer='adamw'
-# ---------------------------------------------------------------------------
 
 def test_adamw_used_when_configured():
     """When optimizer='adamw', the optimizer must be AdamW (not Adam)."""
@@ -162,9 +138,6 @@ def test_adam_not_adamw_when_configured():
     assert not isinstance(optimizer, torch.optim.AdamW), "Adam should not be AdamW"
 
 
-# ---------------------------------------------------------------------------
-# 5. LR warmup: epoch 0 > 0, warmup end ≈ base_lr, cosine decays after warmup
-# ---------------------------------------------------------------------------
 
 def test_scheduler_lr_warmup_and_cosine():
     """LR schedule must: start > 0, reach base_lr at warmup end, decay after warmup."""
@@ -182,23 +155,19 @@ def test_scheduler_lr_warmup_and_cosine():
         min_factor = lr_min / lr if lr > 0 else 0.0
         return min_factor + (1.0 - min_factor) * cosine
 
-    # First epoch: LR must be > 0
     factor_epoch0 = lr_lambda(0)
     assert factor_epoch0 > 0, f"LR at epoch 0 must be > 0, got factor={factor_epoch0}"
 
-    # At warmup end (epoch=warmup_epochs-1): factor should reach 1.0
     factor_at_warmup_end = lr_lambda(warmup_epochs - 1)
     assert abs(factor_at_warmup_end - 1.0) < 1e-9, (
         f"LR at warmup_epochs-1={warmup_epochs-1} must be 1.0 (base_lr), got {factor_at_warmup_end}"
     )
 
-    # After warmup: LR must be strictly less than base_lr
     factor_post_warmup = lr_lambda(warmup_epochs + 10)
     assert factor_post_warmup < 1.0, (
         f"LR after warmup must be < base_lr (factor < 1.0), got {factor_post_warmup}"
     )
 
-    # At max_epochs: LR should be approximately lr_min (factor ≈ 0)
     factor_at_max = lr_lambda(max_epochs)
     assert factor_at_max <= 0.1, (
         f"LR at max_epochs should be near lr_min=0, got factor={factor_at_max}"
@@ -222,17 +191,12 @@ def test_scheduler_first_step_positive_lr_via_pytorch():
         return cosine
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-    # Simulate: optimizer.step() then scheduler.step() (correct PyTorch order)
-    # This moves to epoch 1 LR → factor = (1+1)/5 = 0.4 > 0
     optimizer.step()
     scheduler.step()
     current_lr = scheduler.get_last_lr()[0]
     assert current_lr > 0, f"After first scheduler step, LR must be > 0, got {current_lr}"
 
 
-# ---------------------------------------------------------------------------
-# 6. EarlyStopping triggers after patience epochs without improvement
-# ---------------------------------------------------------------------------
 
 def test_early_stopping_triggers_after_patience():
     """EarlyStopping must return True after patience epochs without improvement.
@@ -242,9 +206,7 @@ def test_early_stopping_triggers_after_patience():
     best, then three consecutive non-improving steps exhaust patience.
     """
     es = EarlyStopping(patience=3, mode="max")
-    # epoch 0: new best=0.5, counter=0 → should not stop
     assert not es.step(0.5), "First call is always a new best; should not stop"
-    # epochs 1,2,3: no improvement → counter reaches patience=3
     assert not es.step(0.5), "epoch 1: 1 without improvement"
     assert not es.step(0.5), "epoch 2: 2 without improvement"
     triggered = es.step(0.5)
@@ -261,29 +223,23 @@ def test_early_stopping_does_not_trigger_before_patience():
     After only 5 total calls (1 best + 4 non-improving), must not stop.
     """
     es = EarlyStopping(patience=5, mode="max")
-    results = [es.step(0.5) for _ in range(5)]  # 1 best-setting + 4 non-improving
+    results = [es.step(0.5) for _ in range(5)]
     assert not results[-1], "EarlyStopping should not trigger after 4 non-improving epochs with patience=5"
 
 
-# ---------------------------------------------------------------------------
-# 7. EarlyStopping resets on improvement
-# ---------------------------------------------------------------------------
 
 def test_early_stopping_resets_on_improvement():
     """Improvement resets the patience counter; stopping should not trigger prematurely."""
     es = EarlyStopping(patience=3, mode="max")
-    es.step(0.5)   # epoch 0: new best
-    es.step(0.5)   # epoch 1: no improvement (1 without)
-    es.step(0.5)   # epoch 2: no improvement (2 without)
-    triggered = es.step(0.6)  # epoch 3: improvement — resets counter
+    es.step(0.5)
+    es.step(0.5)
+    es.step(0.5)
+    triggered = es.step(0.6)
     assert not triggered, "EarlyStopping should not trigger when improvement occurs"
     assert es.epochs_without_improvement == 0, "Counter should reset on improvement"
     assert es.best_metric == pytest.approx(0.6)
 
 
-# ---------------------------------------------------------------------------
-# 8. EarlyStopping has no split parameter (pure metric-based)
-# ---------------------------------------------------------------------------
 
 def test_early_stopping_no_split_parameter():
     """EarlyStopping must accept only scalar metrics, no split arguments."""
@@ -298,14 +254,10 @@ def test_early_stopping_no_split_parameter():
     assert len(step_params) <= 2, f"step() should only take self + metric, got: {step_params}"
 
 
-# ---------------------------------------------------------------------------
-# 9. compute_class_weights uses only train data
-# ---------------------------------------------------------------------------
 
 def test_compute_class_weights_binary():
     """compute_class_weights for a binary task returns pos_weight based on class ratio."""
     n = 100
-    # 10 positives, 90 negatives → expected pos_weight = 9.0
     targets = {BINARY_TASK: torch.tensor([1.0] * 10 + [0.0] * 90)}
     masks = {BINARY_TASK: torch.ones(n)}
 
@@ -326,29 +278,20 @@ def test_compute_class_weights_respects_cap():
     assert pw <= 5.0, f"pos_weight must not exceed max_weight=5.0, got {pw}"
 
 
-# ---------------------------------------------------------------------------
-# 10. Missing labels excluded from class weight computation
-# ---------------------------------------------------------------------------
 
 def test_class_weights_exclude_masked_labels():
     """compute_class_weights must exclude rows where mask==0."""
     n = 100
-    # 50 positives, 50 negatives — but mask out all positives (mask=0)
-    # → only 50 negatives visible → should warn and return no weight (single class)
     targets = {BINARY_TASK: torch.tensor([1.0] * 50 + [0.0] * 50)}
     masks = {BINARY_TASK: torch.tensor([0.0] * 50 + [1.0] * 50)}
 
     weights = compute_class_weights(targets, masks, [BINARY_TASK], max_weight=10.0)
-    # With all positives masked out, only negatives remain — single class → no weight
     assert BINARY_TASK not in weights, (
         "When all positives are masked, compute_class_weights must skip the task "
         "(single-class) rather than computing a spurious weight."
     )
 
 
-# ---------------------------------------------------------------------------
-# 11. get_kendall_log_sigmas returns finite floats for all tasks
-# ---------------------------------------------------------------------------
 
 def test_get_kendall_log_sigmas_returns_finite():
     """get_kendall_log_sigmas must return a finite float for every task."""
@@ -368,22 +311,16 @@ def test_get_kendall_log_sigmas_updates_after_training():
     optimizer = _make_optimizer(model, weighter)
     emb, targets, masks = _make_batch(50)
 
-    # Initial log_sigmas are all zero
     before = get_kendall_log_sigmas(weighter)
     assert all(abs(v) < 1e-8 for v in before.values()), "Initial log_sigmas should be zero"
 
-    # Train one step
     train_one_step(model, optimizer, emb, targets, masks, TASKS, loss_weighter=weighter)
     after = get_kendall_log_sigmas(weighter)
 
-    # At least one task log_sigma should have changed
     changed = any(abs(after[tn] - before[tn]) > 1e-9 for tn in TASKS)
     assert changed, "log_sigma values must update after a training step with Kendall weighting"
 
 
-# ---------------------------------------------------------------------------
-# 12. train_one_step backward compatibility (no class_weights)
-# ---------------------------------------------------------------------------
 
 def test_train_one_step_backward_compat_no_class_weights():
     """Existing callers that omit class_weights must work unchanged."""
@@ -391,16 +328,12 @@ def test_train_one_step_backward_compat_no_class_weights():
     optimizer = _make_optimizer(model, weighter)
     emb, targets, masks = _make_batch(32)
 
-    # Call without class_weights (original signature)
     result = train_one_step(model, optimizer, emb, targets, masks, TASKS, loss_weighter=weighter)
     assert "total_loss" in result
     assert math.isfinite(result["total_loss"]), "Loss must be finite"
     assert result["grad_norm"] >= 0.0
 
 
-# ---------------------------------------------------------------------------
-# 13. compute_masked_task_loss with class_weights
-# ---------------------------------------------------------------------------
 
 def test_compute_masked_task_loss_with_class_weights():
     """compute_masked_task_loss must accept and apply class_weights without error."""
@@ -416,9 +349,6 @@ def test_compute_masked_task_loss_with_class_weights():
     assert math.isfinite(result.losses[BINARY_TASK].item())
 
 
-# ---------------------------------------------------------------------------
-# 14. compute_masked_task_loss without class_weights (backward compat)
-# ---------------------------------------------------------------------------
 
 def test_compute_masked_task_loss_without_class_weights():
     """compute_masked_task_loss called without class_weights must behave exactly as before."""
@@ -434,9 +364,6 @@ def test_compute_masked_task_loss_without_class_weights():
     assert math.isfinite(result.losses[BINARY_TASK].item())
 
 
-# ---------------------------------------------------------------------------
-# 15. compute_class_weights for ORDINAL task (dr_grade)
-# ---------------------------------------------------------------------------
 
 def test_compute_class_weights_ordinal():
     """compute_class_weights for an ordinal task returns per-class inverse-frequency weights.
@@ -447,7 +374,6 @@ def test_compute_class_weights_ordinal():
     - All weights respect the max_weight cap.
     - All weights are positive.
     """
-    # Build 200 samples with class 0 heavily dominant (180 vs 20 for classes 1-4)
     labels = [0] * 180 + [1] * 10 + [2] * 5 + [3] * 3 + [4] * 2
     targets = {ORDINAL_TASK: torch.tensor(labels, dtype=torch.float32)}
     masks = {ORDINAL_TASK: torch.ones(len(labels))}
@@ -458,16 +384,13 @@ def test_compute_class_weights_ordinal():
     w = weights[ORDINAL_TASK]
     assert w.ndim == 1, "Ordinal weight tensor must be 1D"
     assert len(w) == 5, f"Expected 5 per-class weights (classes 0-4), got {len(w)}"
-    # Majority class 0 must have lower weight than minority classes
     assert float(w[0]) < float(w[1]), (
         f"Class 0 weight {float(w[0]):.4f} must be < class 1 weight {float(w[1]):.4f}"
     )
     assert float(w[0]) < float(w[4]), (
         f"Class 0 weight {float(w[0]):.4f} must be < class 4 weight {float(w[4]):.4f}"
     )
-    # All weights must respect the cap
     assert float(w.max()) <= 10.0, (
         f"Max weight {float(w.max()):.4f} must not exceed max_class_weight=10.0"
     )
-    # All weights must be positive
     assert float(w.min()) > 0.0, "All ordinal class weights must be positive"

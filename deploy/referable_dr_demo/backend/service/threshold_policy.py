@@ -1,22 +1,3 @@
-"""threshold_policy.py -- load and validate the validation-only operating point.
-
-The operating-point threshold is derived offline (analysis/derive_threshold.py)
-from the BRSET validation split only and written to the ignored
-``.local/operating_point.local.json``. This module loads it and binds it to the
-active deployment bundle. It refuses (raises :class:`ThresholdInvalidError`) if:
-
-  - the threshold was not derived from the validation split
-  - the backbone checkpoint hash changed
-  - the head checkpoint hash changed
-  - the preprocessing hash changed
-  - the task ordering changed
-  - the model family changed
-  - the native protocol changed
-
-The threshold is never hardcoded in application code; it is read from the
-artifact and only used after these provenance gates pass.
-"""
-
 from __future__ import annotations
 
 import json
@@ -85,14 +66,12 @@ def load_operating_point(
         )
     m: dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
 
-    # --- split gate ---
     _require(
         m.get("derivation_split") == "validation",
         "operating point was not derived from the validation split "
         f"(got {m.get('derivation_split')!r}); refusing to use it.",
     )
 
-    # --- provenance binding gates ---
     _require(
         m.get("backbone_checkpoint_sha256") == bundle.backbone_sha256,
         "operating point backbone hash does not match the active bundle.",

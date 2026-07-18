@@ -1,5 +1,3 @@
-"""Startup, singleton, health-exposure, and fail-closed tests (FROST 21, 25, 26)."""
-
 from __future__ import annotations
 
 import json

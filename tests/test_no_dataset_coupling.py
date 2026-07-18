@@ -1,8 +1,3 @@
-"""tests/test_no_dataset_coupling.py -- Static scan for forbidden dataset-internal vocabulary.
-
-Scans source files outside allowed locations (adapters/configs/docs/tests) for patterns
-that should only appear inside dataset adapters. Based on 04_forbidden_patterns.md.
-"""
 from __future__ import annotations
 import ast
 import re
@@ -12,7 +7,6 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 SRC_ROOT = REPO_ROOT / 'src' / 'retina_screen'
 
-# (pattern, description) -- forbidden outside adapters/configs/docs/tests
 FORBIDDEN_PATTERNS: list[tuple[str, str]] = [
     (r'diagnostic_keywords', 'ODIR native diagnostic-keyword field'),
     (r'Left-Fundus', 'ODIR native image-field name'),

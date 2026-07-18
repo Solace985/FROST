@@ -16,7 +16,6 @@ def dummy_manifest():
 def clean_split(dummy_manifest):
     return split_patients(dummy_manifest, seed=42)
 
-# ---------- sample/patient counts ----------
 
 def test_audit_has_all_four_split_names(dummy_manifest, clean_split):
     audit = audit_split(clean_split, dummy_manifest)
@@ -42,14 +41,12 @@ def test_audit_total_patient_count(dummy_manifest, clean_split):
     pids = {s.patient_id for s in dummy_manifest}
     assert audit.total_patients == len(pids)
 
-# ---------- valid clean split ----------
 
 def test_audit_valid_when_no_overlap(dummy_manifest, clean_split):
     audit = audit_split(clean_split, dummy_manifest)
     assert audit.valid, f"Audit failed on clean split: {audit.message}"
     assert audit.overlap_pairs == {}
 
-# ---------- overlap detection ----------
 
 def _inject_patient_overlap(split_dict, victim_split, target_split, dummy_manifest, n=1):
     """Return a new split_dict with n patients duplicated across two splits."""
@@ -98,7 +95,6 @@ def test_assert_no_overlap_raises_on_overlap(dummy_manifest, clean_split):
     with pytest.raises(ValueError, match="overlap"):
         assert_no_patient_overlap(overlapped, dummy_manifest)
 
-# ---------- missing / ghost assignments ----------
 
 def test_audit_detects_missing_assignments(dummy_manifest, clean_split):
     incomplete = {k: list(v) for k, v in clean_split.items()}
@@ -125,7 +121,6 @@ def test_audit_detects_duplicate_cross_split_assignment(dummy_manifest, clean_sp
     assert not audit.valid
     assert dup_id in audit.duplicate_assignments
 
-# ---------- unknown split names ----------
 
 def test_audit_detects_unknown_split_names(dummy_manifest, clean_split):
     junk = {k: list(v) for k, v in clean_split.items()}
@@ -141,7 +136,6 @@ def test_audit_detects_missing_required_split_name(dummy_manifest, clean_split):
     assert "reliability" in audit.missing_split_names
     assert "missing required split names" in audit.message
 
-# ---------- write_split ----------
 
 def test_write_split_creates_splits_csv(tmp_path, dummy_manifest, clean_split):
     paths = write_split(clean_split, dummy_manifest, tmp_path)

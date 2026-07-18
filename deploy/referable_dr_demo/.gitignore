@@ -24,6 +24,11 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# HF Space travelling artifacts: staged into the SEPARATE public Space repo by
+# hf_space/assemble_space.py; never committed to this (private) research repo.
+hf_space/weights/*.pt
+hf_space/operating_point.json
+
 # Explicitly DO commit the example templates (negated patterns for clarity):
 !config/deployment_bundle.example.yaml
 !config/operating_point.example.json

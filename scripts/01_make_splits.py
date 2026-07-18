@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-"""
-scripts/01_make_splits.py -- Build canonical manifest and patient-level splits.
-
-Thin orchestration script. Dataset parsing lives in adapters; splitting logic
-lives in src/retina_screen/splitting.py.
-"""
 
 from __future__ import annotations
 
@@ -118,7 +112,7 @@ def _label_coverage(
                 "missing": missing_count,
                 "total": len(manifest),
             }
-        else:  # REGRESSION
+        else:
             vals = [
                 getattr(s, target_column)
                 for s in manifest

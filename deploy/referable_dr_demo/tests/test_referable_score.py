@@ -1,10 +1,3 @@
-"""Referable-DR score formula tests (FROST tests 9-11).
-
-These assert the app consumes the canonical referable-DR definition
-P(grade>=2) = softmax(dr_grade_logits)[2:5].sum(), and NOT argmax or any
-single-class shortcut.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -22,7 +15,7 @@ def test_referable_score_formula_uses_softmax_classes_2_to_4():
     """9. Score equals softmax(logits)[2:5].sum for arbitrary logit rows."""
     logits = np.array(
         [
-            [0.0, 0.0, 0.0, 0.0, 0.0],     # uniform -> 3/5 = 0.6
+            [0.0, 0.0, 0.0, 0.0, 0.0],
             [2.0, 1.0, -1.0, 0.5, 3.0],
             [-3.0, 4.0, 0.0, 1.0, -2.0],
         ],
@@ -44,7 +37,6 @@ def test_grade_1_is_not_referable():
 
 def test_argmax_is_not_used_as_score():
     """11. Score is probability mass on grades 2-4, distinct from an argmax rule."""
-    # argmax is class 0 (non-referable) but grades 2-4 still carry real mass.
     logits = np.array([[3.0, 0.0, 1.0, 1.0, 1.0]])
     score = float(referable_dr_score(logits)[0])
     expected = float(_np_softmax(logits[0])[2:].sum())
@@ -52,7 +44,7 @@ def test_argmax_is_not_used_as_score():
     argmax_class = int(np.argmax(logits[0]))
     argmax_referable_indicator = 1.0 if argmax_class >= 2 else 0.0
 
-    assert argmax_class == 0                      # argmax says non-referable
-    assert abs(score - expected) < 1e-12          # equals the mass formula
-    assert score > 0.2                            # NOT the argmax indicator (0.0)
+    assert argmax_class == 0
+    assert abs(score - expected) < 1e-12
+    assert score > 0.2
     assert abs(score - argmax_referable_indicator) > 0.2

@@ -1,23 +1,4 @@
 #!/usr/bin/env python
-"""
-scripts/05_evaluate.py -- Evaluate a trained model on cached embeddings.
-
-Thin orchestration script. Business logic lives in src/retina_screen/.
-
-Usage:
-    python scripts/05_evaluate.py --config configs/experiment/baseline_odir_dinov2.yaml
-
-Requires:
-    scripts/01_make_splits.py to have run (splits.csv)
-    scripts/03_extract_embeddings.py to have run (embedding manifest)
-    scripts/04_train.py to have run (model_checkpoint.pt)
-
-Evaluation split selection:
-    1. Test split cached embeddings (preferred)
-    2. Val split (if test has no cached samples) — marked as limited_embedding_smoke
-    3. Train split (emergency only) — marked as emergency_smoke_only
-    Never silently evaluates on a different split than reported.
-"""
 
 from __future__ import annotations
 
@@ -56,9 +37,6 @@ from retina_screen.preprocessing import PreprocessingConfig, get_preprocessing_h
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Helpers (shared with 04_train.py)
-# ---------------------------------------------------------------------------
 
 
 def _make_dummy_adapter(cfg: dict):
@@ -195,7 +173,6 @@ def _validate_run_dir_for_eval(
                 run_cfg.get("run_mode", ""), run_dir,
             )
             sys.exit(1)
-        # Hard errors for dataset, backbone, task_config identity.
         _run_dataset = run_cfg.get("dataset")
         _eval_dataset = eval_cfg.get("dataset")
         if _run_dataset and _run_dataset != _eval_dataset:
@@ -245,8 +222,6 @@ def _validate_run_dir_for_eval(
                 run_dir,
             )
             sys.exit(1)
-        # Hard error for head_type mismatch: prevents mislabeling MultiTaskHead
-        # results as LinearProbeHead results (or vice versa) in the backbone/head matrix.
         _eval_head_type_norm = str(eval_cfg.get("head_type", "multitask")).lower().strip()
         _run_head_type_norm = str(run_cfg.get("head_type", "multitask")).lower().strip()
         if _eval_head_type_norm != _run_head_type_norm:
@@ -307,9 +282,6 @@ def _build_prep_config(cfg: dict) -> PreprocessingConfig:
     )
 
 
-# ---------------------------------------------------------------------------
-# Diagnostics helper
-# ---------------------------------------------------------------------------
 
 
 def _build_diagnostics(
@@ -331,12 +303,11 @@ def _build_diagnostics(
     diag: dict = {}
     for tn in task_names:
         task = TASK_REGISTRY[tn]
-        # Explicitly cast to float64 numpy arrays to avoid dtype/scalar surprises
         mask = np.asarray(masks[tn], dtype=np.float64)
         target = np.asarray(targets[tn], dtype=np.float64)
         pred_logits = np.asarray(predictions_np[tn], dtype=np.float64)
 
-        valid_idx = mask >= 0.5  # numpy bool array; robust to int/float mask values
+        valid_idx = mask >= 0.5
         n_valid = int(np.sum(valid_idx))
         entry: dict = {"n_valid_labels": n_valid}
 
@@ -344,8 +315,8 @@ def _build_diagnostics(
             valid_logits = pred_logits[valid_idx].ravel()
             scores = 1.0 / (1.0 + np.exp(-valid_logits))
             labels = target[valid_idx].ravel()
-            pos_mask = labels >= 0.5   # 1.0 → True (robust to float rounding)
-            neg_mask = labels < 0.5    # 0.0 → True
+            pos_mask = labels >= 0.5
+            neg_mask = labels < 0.5
             n_pos = int(np.sum(pos_mask))
             n_neg = int(np.sum(neg_mask))
             entry["n_positives"] = n_pos
@@ -379,9 +350,6 @@ def _build_diagnostics(
     return diag
 
 
-# ---------------------------------------------------------------------------
-# Per-sample prediction persistence (Stage 8D-3.5 A1 patch)
-# ---------------------------------------------------------------------------
 
 
 def _save_per_sample_predictions(
@@ -483,9 +451,6 @@ def _save_per_sample_predictions(
     logger.info("Saved predictions_schema.json to %s", schema_path)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -515,7 +480,6 @@ def main() -> None:
     cache_root = Path(cfg.get("cache_root", "cache/embeddings"))
     embedding_dim = backbone_config.embedding_dim
 
-    # --- Require splits ---
     splits_dir = _latest_splits_dir(dataset)
     if splits_dir is None or not (splits_dir / "splits.csv").exists():
         logger.error(
@@ -525,7 +489,6 @@ def main() -> None:
         sys.exit(1)
     split = _load_splits_csv(splits_dir / "splits.csv")
 
-    # --- Require embedding manifest ---
     cache_dir = cache_root / backbone_config.name / dataset / prep_hash
     manifest_path = cache_dir / "manifest.csv"
     if not manifest_path.exists():
@@ -537,7 +500,6 @@ def main() -> None:
     emb_records = load_embedding_manifest(manifest_path)
     cached_ids = {r["sample_id"]: r for r in emb_records}
 
-    # --- Resolve checkpoint (explicit selector or fallback discovery) ---
     if args.run_dir is not None:
         run_dir = Path(args.run_dir)
         _validate_run_dir_for_eval(run_dir, cfg, eval_config_path=args.config)
@@ -557,7 +519,6 @@ def main() -> None:
                 "Example: --run-dir runs/train/brset_<timestamp>"
             )
             sys.exit(1)
-        # Fallback: automatic latest-run discovery (smoke/rehearsal only).
         run_dir = _latest_run_dir(dataset)
         if run_dir is None:
             logger.error(
@@ -568,14 +529,11 @@ def main() -> None:
         checkpoint_path = run_dir / "model_checkpoint.pt"
     logger.info("Using checkpoint: %s", checkpoint_path)
 
-    # --- Build adapter + manifest ---
     adapter = _build_adapter(cfg)
     manifest_samples = adapter.build_manifest()
     sample_lookup = {s.sample_id: s for s in manifest_samples}
     supported_tasks = adapter.get_supported_tasks()
 
-    # --- F1 single-task restriction: filter to one task if selected_task is set ---
-    # Additive only; when selected_task is absent, behaviour is unchanged (all tasks used).
     _selected_task = cfg.get("selected_task")
     if _selected_task is not None:
         if _selected_task not in supported_tasks:
@@ -588,7 +546,6 @@ def main() -> None:
         supported_tasks = [_selected_task]
         logger.info("F1 single-task eval: restricting to selected_task=%r", _selected_task)
 
-    # --- Select evaluation split (test → val → train, with explicit labelling) ---
     eval_split_name: str
     eval_reason: str
     final_test_result: bool
@@ -634,21 +591,16 @@ def main() -> None:
         logger.error("No cached embeddings available in any split. Cannot evaluate.")
         sys.exit(1)
 
-    # Smoke run_mode is never a final result regardless of backbone type.
-    # A real backbone + --limit 32 extraction is still a smoke evaluation.
     if "smoke" in str(cfg.get("run_mode", "")).lower():
         final_test_result = False
         eval_reason = "limited_embedding_smoke"
 
-    # Rehearsal and preliminary configs must never produce final results.
     _run_mode_lower = str(cfg.get("run_mode", "")).lower()
     if "rehearsal" in _run_mode_lower or "stage8d1" in _run_mode_lower:
         final_test_result = False
         eval_reason = "rehearsal_run"
     elif _is_full_internal_config(cfg):
         final_test_result = False
-        # Stage 8D-2 configs keep the stage-specific reason for traceability.
-        # Stage 8D-3+ and other full/internal configs use the generic reason.
         _reason_run_mode = str(cfg.get("run_mode", "")).lower()
         if "stage8d2" in _reason_run_mode:
             eval_reason = "stage8d2_full_internal"
@@ -663,7 +615,6 @@ def main() -> None:
         eval_split_name, len(eval_sids), eval_reason, final_test_result,
     )
 
-    # --- Load embeddings and targets ---
     embeddings_list: list[torch.Tensor] = []
     eval_samples = []
     for sid in eval_sids:
@@ -676,12 +627,6 @@ def main() -> None:
 
     eval_emb = torch.stack(embeddings_list)
 
-    # --- Determine head_type for checkpoint reconstruction ---
-    # Fallback order (per Stage 8D-3A spec):
-    #   1. resolved_config.yaml exists and is readable → use head_type from it.
-    #   2. resolved_config.yaml exists but is malformed/unreadable → fail clearly.
-    #   3. resolved_config.yaml missing → fall back to experiment config's head_type.
-    #   4. Neither source has head_type → default to "multitask" (backward compat).
     _resolved_yaml = run_dir / "resolved_config.yaml"
     if _resolved_yaml.exists():
         try:
@@ -701,7 +646,6 @@ def main() -> None:
     head_type = str(_run_cfg.get("head_type", "multitask"))
     logger.info("Head type for checkpoint reconstruction: %r (from %s)", head_type, _head_type_source)
 
-    # --- Load model ---
     model = build_head(embedding_dim=embedding_dim, task_names=supported_tasks, head_type=head_type)
     state = torch.load(checkpoint_path, map_location=device, weights_only=True)
     try:
@@ -717,12 +661,10 @@ def main() -> None:
     model.to(device)
     logger.info("Model loaded from checkpoint.")
 
-    # --- Inference ---
     with torch.no_grad():
         preds = model(eval_emb.to(device))
     preds_np = {t: preds[t].cpu().numpy() for t in supported_tasks}
 
-    # --- Evaluate ---
     batch = build_task_targets_and_masks(eval_samples, supported_tasks)
     metrics = evaluate_predictions(
         predictions=preds_np,
@@ -740,7 +682,6 @@ def main() -> None:
                 r.reason or "-", r.n,
             )
 
-    # --- Save metrics and evaluation summary ---
     n_cached_per_split = {
         "test": len(test_cached),
         "val": len(val_cached),
@@ -814,7 +755,6 @@ def main() -> None:
     with (eval_out_dir / "smoke_metrics.json").open("w", encoding="utf-8") as fh:
         json.dump({"summary": summary, "metrics": overall_metrics}, fh, indent=2)
 
-    # Diagnostics: polarity checks for binary tasks, prediction distribution for ordinal
     try:
         diagnostics = _build_diagnostics(preds_np, batch.targets, batch.masks, supported_tasks)
         with (eval_out_dir / "diagnostics.json").open("w", encoding="utf-8") as fh:
@@ -823,7 +763,6 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not compute diagnostics: %s", exc)
 
-    # --- Per-sample persistence for downstream bootstrap CI (Stage 8D-3.5 A1 patch) ---
     try:
         import subprocess as _sp  # noqa: PLC0415
         _git_sha = _sp.run(

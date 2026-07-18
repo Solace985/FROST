@@ -1,17 +1,3 @@
-"""
-test_f1_singletask_configs.py -- F1 single-task ablation config validation.
-
-Validates:
-  - All 28 F1 experiment configs load without error and are internally consistent.
-  - selected_task matches the task component in each filename.
-  - backbone, head_type, and variant fields match filename components.
-  - All configs enforce Decision 027 invariants and F1 boundary constraints.
-  - build_head() routes new F1 head types correctly (no new model classes needed).
-  - Existing locked head types (linear_probe, multitask) still route correctly.
-
-No real backbone loading. No BRSET data required. No network access.
-"""
-
 from __future__ import annotations
 
 import pathlib

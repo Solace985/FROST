@@ -1,10 +1,3 @@
-"""Operating-point / threshold-policy tests (FROST tests 12-15).
-
-These verify the threshold is bound to the validation split and to the bundle
-provenance, and is refused if it came from the test or reliability split or if any
-bound hash drifts.
-"""
-
 from __future__ import annotations
 
 import json
@@ -69,7 +62,6 @@ def test_threshold_selection_uses_validation_only(tmp_path):
     assert op.decide(0.9) == threshold_policy.REFERABLE
     assert op.decide(0.0) == threshold_policy.NOT_REFERABLE
 
-    # If the real local artifact exists, it must also be validation-derived.
     real = threshold_policy.default_threshold_path()
     if real.exists():
         m = json.loads(real.read_text(encoding="utf-8"))

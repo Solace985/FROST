@@ -1,20 +1,3 @@
-"""
-test_backbone_loading.py -- Tier 6 tests for Stage 8A real backbone loading.
-
-Verifies:
-- backbone configs contain required fields
-- expected embedding dimensions in configs
-- RETFound config marks as deferred/unavailable
-- unknown model_type raises BackboneUnavailableError (no silent mock fallback)
-- _freeze_backbone freezes all parameters
-- dim mismatch raises BackboneDimensionError
-- ResNet-50/ConvNeXt extraction path does not produce 1000-class logits (weights=None)
-- backbone cache namespaces are distinct (mock vs real)
-
-Unit tests use mocking or weights=None to avoid repeated large downloads.
-Guarded integration tests skip if torchvision is not importable.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,9 +20,6 @@ from retina_screen.embeddings import (
 from retina_screen.core import load_config
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _BACKBONE_DIR = Path("configs/backbone")
 
@@ -50,9 +30,6 @@ def _load_backbone_cfg(name: str) -> dict:
     return load_config(_BACKBONE_DIR / f"{name}.yaml")
 
 
-# ---------------------------------------------------------------------------
-# 1–4. Config field validation (no model loading)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("backbone_name", [
@@ -66,9 +43,6 @@ def test_backbone_config_has_required_fields(backbone_name: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 5–8. Expected embedding dimensions in configs
-# ---------------------------------------------------------------------------
 
 
 def test_resnet50_config_expects_embedding_dim_2048() -> None:
@@ -99,19 +73,14 @@ def test_dinov2_large_config_expects_embedding_dim_1024() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 9. RETFound config marks as deferred/unavailable
-# ---------------------------------------------------------------------------
 
 
 def test_retfound_config_marks_as_deferred() -> None:
     cfg = _load_backbone_cfg("retfound")
-    # Must not be model_type=mock (that would be silent fallback)
     assert cfg.get("model_type") != "mock", (
         "retfound.yaml model_type must not be 'mock' — "
         "RETFound is deferred, not silently replaced by mock."
     )
-    # Must indicate deferred/unavailable status
     status = str(cfg.get("status", "") or cfg.get("stage_available", "")).lower()
     assert "deferred" in status or "unavailable" in status, (
         f"retfound.yaml does not clearly mark as deferred/unavailable. "
@@ -119,9 +88,6 @@ def test_retfound_config_marks_as_deferred() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 10. Unknown model_type raises BackboneUnavailableError (no silent mock fallback)
-# ---------------------------------------------------------------------------
 
 
 def test_unknown_model_type_raises_backbone_unavailable() -> None:
@@ -140,12 +106,11 @@ def test_unknown_model_type_does_not_return_mock() -> None:
     )
     try:
         result = load_backbone(cfg, torch.device("cpu"))
-        # If it somehow didn't raise, it must not be a MockBackbone
         assert not isinstance(result, MockBackbone), (
             "load_backbone silently returned MockBackbone for an unknown model_type"
         )
     except (BackboneUnavailableError, ValueError, RuntimeError):
-        pass  # expected
+        pass
 
 
 def test_retfound_model_type_raises_backbone_unavailable() -> None:
@@ -155,14 +120,10 @@ def test_retfound_model_type_raises_backbone_unavailable() -> None:
         load_backbone(cfg, torch.device("cpu"))
 
 
-# ---------------------------------------------------------------------------
-# 11. _freeze_backbone freezes all parameters
-# ---------------------------------------------------------------------------
 
 
 def test_freeze_backbone_sets_requires_grad_false() -> None:
     model = nn.Sequential(nn.Linear(4, 8), nn.Linear(8, 4))
-    # Verify parameters start as trainable
     for param in model.parameters():
         param.requires_grad_(True)
     assert any(p.requires_grad for p in model.parameters()), (
@@ -183,13 +144,9 @@ def test_freeze_backbone_sets_eval_mode() -> None:
     assert not model.training, "_freeze_backbone did not set model to eval mode"
 
 
-# ---------------------------------------------------------------------------
-# 12. _verify_embedding_dim raises BackboneDimensionError on mismatch
-# ---------------------------------------------------------------------------
 
 
 def test_verify_embedding_dim_raises_on_wrong_dim() -> None:
-    # Model that outputs 512 but config says 1024
     model = nn.Sequential(nn.Flatten(), nn.Linear(3 * 224 * 224, 512))
     model.eval()
     cfg = BackboneConfig(name="test", embedding_dim=1024, model_type="mock")
@@ -201,12 +158,9 @@ def test_verify_embedding_dim_passes_on_correct_dim() -> None:
     model = nn.Sequential(nn.Flatten(), nn.Linear(3 * 224 * 224, 2048))
     model.eval()
     cfg = BackboneConfig(name="test", embedding_dim=2048, model_type="mock")
-    _verify_embedding_dim(model, cfg, torch.device("cpu"))  # must not raise
+    _verify_embedding_dim(model, cfg, torch.device("cpu"))
 
 
-# ---------------------------------------------------------------------------
-# 13. Mock and real backbone cache namespaces are distinct
-# ---------------------------------------------------------------------------
 
 
 def test_mock_and_real_backbone_cache_namespaces_are_separate(tmp_path: Path) -> None:
@@ -219,15 +173,11 @@ def test_mock_and_real_backbone_cache_namespaces_are_separate(tmp_path: Path) ->
     assert mock_dir != dinov2_dir, "mock and dinov2_large share the same cache directory"
     assert resnet_dir != dinov2_dir, "resnet50 and dinov2_large share the same cache directory"
 
-    # Verify backbone name appears in path
     assert "mock" in mock_dir.parts
     assert "resnet50" in resnet_dir.parts
     assert "dinov2_large" in dinov2_dir.parts
 
 
-# ---------------------------------------------------------------------------
-# 14–17. Guarded structural tests — weights=None (no download, no pretrained)
-# ---------------------------------------------------------------------------
 
 torchvision = pytest.importorskip(
     "torchvision",

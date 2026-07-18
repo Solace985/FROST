@@ -1,29 +1,3 @@
-"""
-adapters/odir.py -- ODIR-5K dataset adapter.
-
-ODIR-specific native vocabulary is confined to this file and ODIR configs/tests.
-Downstream pipeline code consumes only CanonicalSample fields and task registry
-names.
-
-Stage 7 scope
--------------
-ODIR-5K is used as a first real-dataset engineering smoke test, not a final
-paper baseline. Only Training Images are used. Testing Images are excluded
-because they are unlabeled for this supervised smoke stage. The duplicated
-nested ODIR-5K/ODIR-5K folder is intentionally ignored.
-
-Label policy
-------------
-- dr_grade is unsupported; ODIR has no reliable direct 0-4 ordinal DR column.
-- D maps to canonical diabetes as a weak retinal-proxy label.
-- H maps to canonical hypertension as a weak proxy only when hypertension is
-  already present in TASK_REGISTRY. It is not routed to hypertensive_retinopathy
-  in Stage 7.
-- Suspected/uncertain terms map to None, never to a positive label.
-- Ambiguous/unmapped positive-row eye labels map to None, not 0.
-- Missing labels remain None.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -43,9 +17,6 @@ from retina_screen.tasks import TASK_REGISTRY
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Native ODIR constants (private to adapter boundary)
-# ---------------------------------------------------------------------------
 
 _COL_ID = "ID"
 _COL_AGE = "Patient Age"
@@ -197,7 +168,6 @@ class ODIRAdapter(DatasetAdapter):
                 f"ODIR training image directory not found: {self._images_dir}"
             )
 
-        # Audit provenance: excluded and duplicate directories
         _testing_dir = self._root / "Testing Images"
         self._excluded_testing_dirs: list[str] = (
             [str(_testing_dir)] if _testing_dir.exists() else []
@@ -235,7 +205,6 @@ class ODIRAdapter(DatasetAdapter):
         self._manifest = self._build_manifest_internal()
         self._sample_lookup = {sample.sample_id: sample for sample in self._manifest}
 
-        # Audit provenance: count image files in Training Images not referenced by manifest
         _referenced_names = {Path(s.image_path).name for s in self._manifest}
         _all_image_names = {
             p.name for p in self._images_dir.iterdir()

@@ -1,23 +1,7 @@
-"""app.py -- FROST FastAPI backend.
-
-Frozen Representation for Ocular Screening and Triage — local referable-DR
-research demonstrator. Binds to 127.0.0.1 only (set by the launch command).
-
-Startup gates (readiness is exposed only if all pass):
-  1. load + validate the local deployment bundle (hashes, dim 384, pooling, 392)
-  2. load the frozen backbone + MultiTaskHead once; eval; frozen; warm-up
-  3. load + provenance-validate the validation-only operating point
-  4. canonical synthetic parity self-check (must pass)
-  5. study-linked parity self-check (must pass; "unavailable" -> not ready)
-
-/predict fails closed (HTTP 503) whenever the server is not ready: it never emits
-a real referable-DR result without a valid bundle, threshold, and parity gate.
-Uploads are processed in memory only; nothing is persisted or logged with identity.
-"""
-
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -28,7 +12,6 @@ from typing import Any
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 
-# Make the absolute package path importable when launched via uvicorn.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from deploy.referable_dr_demo import __version__ as APP_VERSION  # noqa: E402
@@ -54,8 +37,8 @@ class AppState:
     bundle: Any = None
     service: Any = None
     operating_point: Any = None
-    parity_status: str = "unavailable"   # "pass" | "fail" | "unavailable"
-    threshold_status: str = "blocked"    # "validated" | "blocked"
+    parity_status: str = "unavailable"
+    threshold_status: str = "blocked"
     bundle_version: str = "unknown"
     parity_detail: dict[str, Any] = field(default_factory=dict)
 
@@ -66,7 +49,10 @@ STATE = AppState()
 def _startup() -> None:
     """Run every gate; populate STATE. Never raises (records blocked reason)."""
     try:
-        STATE.bundle = bundle_mod.load_validated_bundle()
+        if bundle_mod.default_bundle_path().exists():
+            STATE.bundle = bundle_mod.load_validated_bundle()
+        else:
+            STATE.bundle = bundle_mod.build_validated_bundle()
         STATE.bundle_version = STATE.bundle.bundle_version
     except Exception as exc:  # noqa: BLE001
         STATE.blocked_reason = f"bundle validation failed: {exc}"
@@ -80,7 +66,6 @@ def _startup() -> None:
         logger.error("Startup blocked: %s", STATE.blocked_reason)
         return
 
-    # Operating point (validation-only; provenance-bound).
     try:
         STATE.operating_point = threshold_policy.load_operating_point(STATE.bundle)
         STATE.threshold_status = "validated"
@@ -90,7 +75,6 @@ def _startup() -> None:
         logger.error("Startup blocked: %s", STATE.blocked_reason)
         return
 
-    # Parity self-checks.
     try:
         syn = verify_parity.canonical_synthetic_parity(STATE.service, STATE.bundle)
         study = verify_parity.study_linked_parity(
@@ -105,12 +89,21 @@ def _startup() -> None:
         elif study["status"] == "fail":
             STATE.parity_status = "fail"
             STATE.blocked_reason = "study-linked parity failed"
-        else:  # unavailable
-            STATE.parity_status = "unavailable"
-            STATE.blocked_reason = (
-                "study-linked parity fixture unavailable; refusing to emit real "
-                "predictions"
-            )
+        else:
+            if os.environ.get("FROST_ALLOW_SYNTHETIC_ONLY_READINESS") == "1":
+                integ = verify_parity.integrity_self_check(STATE.service, STATE.bundle)
+                STATE.parity_detail["integrity"] = integ
+                if integ["status"] == "pass":
+                    STATE.parity_status = "pass"
+                else:
+                    STATE.parity_status = "fail"
+                    STATE.blocked_reason = "non-credentialed integrity self-check failed"
+            else:
+                STATE.parity_status = "unavailable"
+                STATE.blocked_reason = (
+                    "study-linked parity fixture unavailable; refusing to emit real "
+                    "predictions"
+                )
     except Exception as exc:  # noqa: BLE001
         STATE.parity_status = "fail"
         STATE.blocked_reason = f"parity self-check error: {exc}"
@@ -166,7 +159,6 @@ def _error(category: str, message: str, http_status: int) -> JSONResponse:
 
 @app.post("/predict")
 async def predict(image: UploadFile = File(...)) -> Any:  # noqa: ANN401
-    # Fail closed if the server is not ready (no bundle / threshold / parity).
     if not STATE.ready:
         privacy.safe_request_log(
             success=False, app_version=APP_VERSION,
@@ -182,12 +174,10 @@ async def predict(image: UploadFile = File(...)) -> Any:  # noqa: ANN401
 
     t_total0 = time.perf_counter()
 
-    # Upload read (in memory only; never persisted).
     t0 = time.perf_counter()
     raw = await image.read()
     decode_ms = (time.perf_counter() - t0) * 1000.0
 
-    # Technical input checks (decode + validate). Soft warnings do not block.
     t0 = time.perf_counter()
     try:
         rgb, checks = image_checks.check_and_decode(raw)
@@ -199,10 +189,9 @@ async def predict(image: UploadFile = File(...)) -> Any:  # noqa: ANN401
         )
         return _error(exc.category, exc.message, 400)
     finally:
-        raw = b""  # drop bytes promptly
+        raw = b""
     checks_ms = (time.perf_counter() - t0) * 1000.0
 
-    # Frozen inference.
     try:
         result = STATE.service.infer(rgb)
     except Exception:  # noqa: BLE001 - never leak a stack trace to the client

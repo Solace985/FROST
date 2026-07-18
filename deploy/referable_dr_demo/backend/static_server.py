@@ -1,10 +1,3 @@
-"""static_server.py -- serve the FROST plain HTML/CSS/JS frontend from FastAPI.
-
-The frontend is fully static (no framework, no build step, no CDN). It is served
-from the same local FastAPI process: index.html at "/", and the supporting
-assets under "/static".
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

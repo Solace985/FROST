@@ -1,32 +1,3 @@
-"""
-preprocessing.py -- Retinal image preprocessing pipeline.
-
-Owns: retinal crop, resize, optional CLAHE, optional Graham preprocessing,
-ImageNet normalization, training augmentations, deterministic extraction transforms,
-preprocessing config, stable config hash for cache namespacing.
-
-Must not contain: dataset-native column names, training loops, model task heads,
-evaluation metrics.
-
-Deferred for later stages
---------------------------
-CLAHE (use_clahe=True) and Graham preprocessing (use_graham=True) raise
-NotImplementedError in Stage 6. Implement in Stage 7+ when real images are used.
-
-Mode contract
--------------
-mode="extract" | "val" | "test": deterministic — Resize → CenterCrop → ToTensor → Normalize.
-    Random transforms (hflip, rotation, color jitter) are NEVER applied in these modes,
-    regardless of config values. This guarantees reproducible embedding extraction.
-mode="train": augmentation-enabled — config values are applied before the deterministic
-    Resize → CenterCrop → ToTensor → Normalize sequence.
-
-Note on horizontal flip
------------------------
-random_hflip_p defaults to 0.0 because fundus images have laterality (left/right eye).
-Horizontal flip swaps laterality and must not be used in extraction or by default.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -42,9 +13,6 @@ from torchvision import transforms
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Preprocessing config
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -56,13 +24,12 @@ class PreprocessingConfig:
     """
 
     image_size: int = 224
-    mean: tuple[float, float, float] = (0.485, 0.456, 0.406)   # ImageNet
-    std: tuple[float, float, float] = (0.229, 0.224, 0.225)    # ImageNet
+    mean: tuple[float, float, float] = (0.485, 0.456, 0.406)
+    std: tuple[float, float, float] = (0.229, 0.224, 0.225)
     use_clahe: bool = False
     use_graham: bool = False
     interpolation: str = "bilinear"
-    # Train-mode augmentations (never applied in extract/val/test mode).
-    random_hflip_p: float = 0.0     # 0.0 = disabled; fundus laterality sensitive
+    random_hflip_p: float = 0.0
     random_rotation_deg: float = 0.0
     color_jitter: bool = False
 
@@ -78,9 +45,6 @@ def get_preprocessing_hash(config: PreprocessingConfig) -> str:
     return hashlib.sha256(serialized).hexdigest()[:16]
 
 
-# ---------------------------------------------------------------------------
-# Pipeline construction
-# ---------------------------------------------------------------------------
 
 
 def _get_interpolation_mode(interpolation: str) -> transforms.InterpolationMode:

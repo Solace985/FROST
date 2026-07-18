@@ -1,13 +1,3 @@
-"""
-tasks.py -- Task registry: definitions, types, and lookup helpers.
-
-Owns: task type definitions, TaskDefinition dataclass, task registry dict,
-task lookup helpers, and task metadata needed by model/training/evaluation.
-
-Must not contain: native dataset column names, dataset-specific conditionals,
-training loop code, or model head implementations.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -19,9 +9,6 @@ from types import MappingProxyType
 from retina_screen.schema import CanonicalSample, Sex
 
 
-# ---------------------------------------------------------------------------
-# Enums
-# ---------------------------------------------------------------------------
 
 
 class TaskType(str, Enum):
@@ -61,9 +48,6 @@ class LabelQuality(str, Enum):
     UNKNOWN = "unknown"
 
 
-# ---------------------------------------------------------------------------
-# TaskDefinition
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -103,12 +87,8 @@ class TaskDefinition:
     target_encoding: Mapping[object, float] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Task registry
-# ---------------------------------------------------------------------------
 
 TASK_REGISTRY: dict[str, TaskDefinition] = {
-    # --- DR grading (ordinal 0-4) ---
     "dr_grade": TaskDefinition(
         name="dr_grade",
         task_type=TaskType.ORDINAL,
@@ -119,7 +99,6 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         allowed_as_headline=True,
         num_classes=5,
     ),
-    # --- Ocular conditions ---
     "glaucoma": TaskDefinition(
         name="glaucoma",
         task_type=TaskType.BINARY,
@@ -192,7 +171,6 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         label_quality=LabelQuality.HIGH,
         allowed_as_headline=False,
     ),
-    # --- Systemic conditions (proxy by default; adapters/configs refine) ---
     "diabetes": TaskDefinition(
         name="diabetes",
         task_type=TaskType.BINARY,
@@ -247,7 +225,6 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         label_quality=LabelQuality.PROXY,
         allowed_as_headline=False,
     ),
-    # --- Regression targets ---
     "retinal_age": TaskDefinition(
         name="retinal_age",
         task_type=TaskType.REGRESSION,
@@ -255,8 +232,6 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         loss=LossType.MSE,
         primary_metric=MetricType.MAE,
         label_quality=LabelQuality.UNKNOWN,
-        # Can be headline with BRSET; secondary under ODIR-only.
-        # claim_mode.yaml gates actual headline reporting per scenario.
         allowed_as_headline=True,
     ),
     "diabetes_duration_years": TaskDefinition(
@@ -268,7 +243,6 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
         label_quality=LabelQuality.UNKNOWN,
         allowed_as_headline=False,
     ),
-    # --- Fairness probe (not a clinical target) ---
     "sex": TaskDefinition(
         name="sex",
         task_type=TaskType.BINARY,
@@ -282,9 +256,6 @@ TASK_REGISTRY: dict[str, TaskDefinition] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Lookup helpers
-# ---------------------------------------------------------------------------
 
 
 def get_task(name: str) -> TaskDefinition:
@@ -308,9 +279,6 @@ def get_headline_tasks() -> list[TaskDefinition]:
     return [t for t in TASK_REGISTRY.values() if t.allowed_as_headline]
 
 
-# ---------------------------------------------------------------------------
-# Registry self-validation (runs at import time to catch schema drift)
-# ---------------------------------------------------------------------------
 
 
 def _validate_registry() -> None:

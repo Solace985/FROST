@@ -1,44 +1,3 @@
-"""
-data.py -- Data-layer utilities for task-target encoding and metadata filtering.
-
-Owns: encode canonical samples into (target, mask) pairs per task; apply
-FeaturePolicy before exposing metadata fields; prepare model-ready structures.
-
-Must not contain: model architecture, training loop, loss computation, evaluation
-metrics, embedding extraction, preprocessing, or concrete adapter imports.
-
-Missing-label convention
-------------------------
-Missing labels are represented as ``None`` in ``CanonicalSample``.  This module
-converts ``None`` → mask=0 so that missing targets contribute zero gradient.
-
-Placeholder conventions (documented for downstream compatibility):
-
-- MISSING_CLASS_PLACEHOLDER = -1.0
-  Used for missing binary, ordinal, or categorically-encoded targets.
-  -1 is outside all valid class ranges ([0, 1] for binary, [0, N-1] for ordinal),
-  so it can never be confused with an observed label.
-
-- MISSING_REGRESSION_PLACEHOLDER = float("nan")
-  Used for missing continuous/regression targets.
-
-- MISSING_METADATA_PLACEHOLDER = 0.0
-  Used for missing (None) allowed metadata fields in numerical structures.
-
-NaN + mask contract (Stage 5 training code must follow this)
-------------------------------------------------------------
-When a regression target is NaN and mask=0, the loss function MUST select
-observed samples FIRST (using the mask), then compute loss on those samples.
-Do NOT compute raw loss on all targets and then multiply by mask, because:
-    NaN * 0.0 = NaN   (IEEE 754)
-The masked loss must be computed as:
-    selected_targets = targets[mask == 1]
-    selected_preds   = preds[mask == 1]
-    loss = criterion(selected_preds, selected_targets)   # only on observed
-This is a contract between data.py (which produces NaN for missing regression
-targets) and training.py (which must honour the mask before computing loss).
-"""
-
 from __future__ import annotations
 
 import logging
@@ -52,17 +11,11 @@ from retina_screen.tasks import TASK_REGISTRY, TaskType, get_task
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Placeholder constants
-# ---------------------------------------------------------------------------
 
 MISSING_CLASS_PLACEHOLDER: float = -1.0
 MISSING_REGRESSION_PLACEHOLDER: float = float("nan")
 MISSING_METADATA_PLACEHOLDER: float = 0.0
 
-# ---------------------------------------------------------------------------
-# Return types
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -124,9 +77,6 @@ class MetadataFeatures:
     allowed_fields: frozenset[str]
 
 
-# ---------------------------------------------------------------------------
-# encode_task_target
-# ---------------------------------------------------------------------------
 
 
 def encode_task_target(
@@ -150,16 +100,14 @@ def encode_task_target(
       - Mapped value: ``value=encoding[label]``, ``mask=1.0``.
       - Unmapped value (e.g. Sex.UNKNOWN): ``mask=0.0`` (not a fabricated class).
     """
-    task = get_task(task_name)  # raises KeyError for unknown task
+    task = get_task(task_name)
     raw = getattr(sample, task.target_column)
 
-    # --- Tasks with an explicit categorical target encoding ---
     if task.target_encoding is not None:
         if raw is None:
             return EncodedTarget(task_name, MISSING_CLASS_PLACEHOLDER, 0.0)
         encoded = task.target_encoding.get(raw)
         if encoded is None:
-            # Value is present but not in the encoding map (e.g. Sex.UNKNOWN).
             logger.debug(
                 "task=%s: target value %r not in target_encoding; masking.",
                 task_name,
@@ -168,13 +116,11 @@ def encode_task_target(
             return EncodedTarget(task_name, MISSING_CLASS_PLACEHOLDER, 0.0)
         return EncodedTarget(task_name, float(encoded), 1.0)
 
-    # --- Missing label ---
     if raw is None:
         if task.task_type == TaskType.REGRESSION:
             return EncodedTarget(task_name, MISSING_REGRESSION_PLACEHOLDER, 0.0)
         return EncodedTarget(task_name, MISSING_CLASS_PLACEHOLDER, 0.0)
 
-    # --- Observed label ---
     if task.task_type == TaskType.BINARY:
         if raw not in (0, 1):
             raise ValueError(
@@ -207,9 +153,6 @@ def encode_task_target(
     )
 
 
-# ---------------------------------------------------------------------------
-# build_task_targets_and_masks
-# ---------------------------------------------------------------------------
 
 
 def build_task_targets_and_masks(
@@ -231,7 +174,6 @@ def build_task_targets_and_masks(
         ``targets[task_name]`` and ``masks[task_name]`` are lists of length
         ``len(samples)``.  Masks are 0.0 for missing/unmapped labels.
     """
-    # Validate all task names upfront (fail closed before processing any sample)
     for tn in task_names:
         get_task(tn)
 
@@ -247,9 +189,6 @@ def build_task_targets_and_masks(
     return TaskTargetsBatch(targets=targets, masks=masks)
 
 
-# ---------------------------------------------------------------------------
-# build_metadata_features
-# ---------------------------------------------------------------------------
 
 
 def build_metadata_features(
@@ -284,10 +223,8 @@ def build_metadata_features(
     MetadataFeatures
         Raw field values (not numerically encoded) and per-field observation mask.
     """
-    # FeaturePolicy is the mandatory gate — call it first.
     allowed = feature_policy.allowed_fields(task_name, mode, explicit_allow)
 
-    # Build values and observation masks in stable sorted order.
     values: dict[str, Any] = {}
     observation_mask: dict[str, float] = {}
     for field in sorted(allowed):
